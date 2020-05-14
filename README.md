@@ -35,7 +35,7 @@ DarkRift 2 includes a "DarkRift Server (.NET Framework/Core).zip" file in its as
 #### Client Setup
 Running a client is fairly straight forward, attach the DarkReflectiveMirror script to your NetworkManager and set it as the transport. Put in the IP/Port of your relay server (ignore the ip/port of the UnityClient script), turn off Auto Connect on the UnityClient script and assign DarkReflectiveMirror as the Transport on the NetworkManager. When you start a server, you can simply get the URI from the transport and use that to connect. If you wish to connect without the URI, the DarkReflectiveMirror component has a public "Server ID" field which is what clients would set as the address to connect to.
  
- 
+Note: If you would like to test without creating a server, feel free to use my test server with IP: 34.72.21.213 and port 4296  :)
 
 \*The free version only includes a .NET framework server which from my benchmarks, uses way more performance(More than double!) than the .NET core server. Although you could compile your own .NET core server using the DarkRift.Server.dll from the free version, this requires looking at the functions and understanding how to start a server using it.
 
