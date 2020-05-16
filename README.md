@@ -27,7 +27,7 @@ Now for the juicy part, using it. Like I mentioned in the 'What' section, this i
 First things first, you will need:
 * Mirror, Also install that from Asset Store or github.
 * Download the latest release of Dark Reflective Mirror Unity Package and put that in your project also. Download from: [Releases](https://github.com/Derek-R-S/Dark-Reflective-Mirror/releases)
-* DarkRift 2, If you install the Unity Package from the releases you can move on to the setup. If you prefer to install DarkRift 2 manually you will need to do a few things. Move the DarkRift folder from Assets/DarkRift to Mirror/Runtime/Transports/DarkReflectiveMirror/DarkRift, then you will need to take the Editor folder from both the Client and Server folders inside of the DarkRift folder and put them in the root of your assets.
+* DarkRift 2, If you install the Unity Package from the releases you can move on to the setup. If you prefer to install DarkRift 2 manually you will need to do a few things. First download it from the asset store, then move the DarkRift folder from Assets/DarkRift to Mirror/Runtime/Transports/DarkReflectiveMirror/DarkRift, then you will need to take the Editor folder from both the Client and Server folders inside of the DarkRift folder and put them in the root of your assets.
 
 #### Setting up the unity project
 
