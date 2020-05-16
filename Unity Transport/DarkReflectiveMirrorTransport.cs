@@ -27,9 +27,13 @@ public class DarkReflectiveMirrorTransport : Transport
 
     void Awake()
     {
+        IPAddress ipAddress;
+        if (!IPAddress.TryParse(relayIP, out ipAddress)) { ipAddress = Dns.GetHostEntry(relayIP).AddressList[0]; }
+
         drClient = GetComponent<UnityClient>();
         if(drClient.ConnectionState == ConnectionState.Disconnected)
-            drClient.Connect(IPAddress.Parse(relayIP), relayPort, true);
+        
+        drClient.Connect(IPAddress.Parse(ipAddress.ToString()), relayPort, true);
         drClient.Disconnected += Client_Disconnected;
         drClient.MessageReceived += Client_MessageReceived;
     }
@@ -120,7 +124,7 @@ public class DarkReflectiveMirrorTransport : Transport
     public override void ClientConnect(string address)
     {
         ushort hostID = 0;
-        if (!Available() || !ushort.TryParse(address, out hostID))
+        if (!Available() ) //|| !ushort.TryParse(address, out hostID))
         {
             Debug.Log("Not connected to relay or address is not a proper ID!");
             OnClientDisconnected?.Invoke();
