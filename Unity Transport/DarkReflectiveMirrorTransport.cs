@@ -12,7 +12,7 @@ using UnityEngine;
 [RequireComponent(typeof(UnityClient))]
 public class DarkReflectiveMirrorTransport : Transport
 {
-    public string relayIP = "127.0.0.1";
+    public string relayIP = "34.72.21.213";
     public ushort relayPort = 4296;
     public int maxServerPlayers = 10;
     public const string Scheme = "darkrelay";
@@ -21,15 +21,21 @@ public class DarkReflectiveMirrorTransport : Transport
     private bool isClient;
     private bool isConnected;
     private bool isServer;
+    [Tooltip("This what what others use to connect, as soon as you start a server this will be valid. It can even be 0 if you are the first client on the relay!")]
     public ushort serverID;
     private bool shutdown = false;
     private int currentMemberID = 0;
 
     void Awake()
     {
+        IPAddress ipAddress;
+        if (!IPAddress.TryParse(relayIP, out ipAddress)) { ipAddress = Dns.GetHostEntry(relayIP).AddressList[0]; }
+
         drClient = GetComponent<UnityClient>();
-        if(drClient.ConnectionState == ConnectionState.Disconnected)
-            drClient.Connect(IPAddress.Parse(relayIP), relayPort, true);
+
+        if (drClient.ConnectionState == ConnectionState.Disconnected)
+            drClient.Connect(IPAddress.Parse(ipAddress.ToString()), relayPort, true);
+
         drClient.Disconnected += Client_Disconnected;
         drClient.MessageReceived += Client_MessageReceived;
     }
@@ -108,6 +114,7 @@ public class DarkReflectiveMirrorTransport : Transport
         if (isClient)
         {
             isClient = false;
+            isConnected = false;
             OnClientDisconnected?.Invoke();
         }
     }
