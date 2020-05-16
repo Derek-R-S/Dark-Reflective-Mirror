@@ -1,7 +1,7 @@
 # Dark Reflective Mirror
 
 ## What
-Dark Reflective Mirror is a transport for Mirror Networking which relays network traffic through your own servers. This allows you to have clients host game servers and not worry about NAT/Port Forwarding, etc. This is a very early version and lacks many of the features I plan on adding but it still is completely usable for a proof of concept/prototyping your game but I would not recommend using this for anything released until more features are added.
+Dark Reflective Mirror is a transport for Mirror Networking which relays network traffic through your own servers. This allows you to have clients host game servers and not worry about NAT/Port Forwarding, etc. This is a very early version and lacks many of the features I plan on adding but it still is completely usable for a proof of concept/prototyping your game but I would not recommend using this for anything released until more features are added. Also note, I am no where close to a professional programmer so if you see some optimizations please tell me! I love to learn and would like to make this as optimized as possible. Thanks.
 
 
 ## Plans
