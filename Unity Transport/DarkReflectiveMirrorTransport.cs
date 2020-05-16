@@ -15,6 +15,8 @@ public class DarkReflectiveMirrorTransport : Transport
     public string relayIP = "34.72.21.213";
     public ushort relayPort = 4296;
     public int maxServerPlayers = 10;
+    [Tooltip("If your relay server has a password enter it here, or else leave it blank.")]
+    public string relayPassword;
     public const string Scheme = "darkrelay";
     private BiDictionary<ushort, int> connectedClients = new BiDictionary<ushort, int>();
     private UnityClient drClient;
@@ -50,6 +52,14 @@ public class DarkReflectiveMirrorTransport : Transport
                 OpCodes opCode = (OpCodes)message.Tag;
                 switch (opCode)
                 {
+                    case OpCodes.AuthenticationRequest:
+                        using (DarkRiftWriter writer = DarkRiftWriter.Create())
+                        {
+                            writer.Write(relayPassword);
+                            using (Message sendAuthenticationResponse = Message.Create((ushort)OpCodes.AuthenticationResponse, writer))
+                                drClient.Client.SendMessage(sendAuthenticationResponse, SendMode.Reliable);
+                        }
+                        break;
                     case OpCodes.GetData:
                         int dataLength = reader.ReadInt32();
                         byte[] receivedData = new byte[dataLength];
@@ -325,4 +335,4 @@ public class DarkReflectiveMirrorTransport : Transport
     }
 }
 
-enum OpCodes { Default = 0, RequestID = 1, JoinServer = 2, SendData = 3, GetID = 4, ServerJoined = 5, GetData = 6, CreateRoom = 7, ServerLeft = 8, PlayerDisconnected = 9, RoomCreated = 10, LeaveRoom = 11, KickPlayer = 12 }
+enum OpCodes { Default = 0, RequestID = 1, JoinServer = 2, SendData = 3, GetID = 4, ServerJoined = 5, GetData = 6, CreateRoom = 7, ServerLeft = 8, PlayerDisconnected = 9, RoomCreated = 10, LeaveRoom = 11, KickPlayer = 12, AuthenticationRequest = 13, AuthenticationResponse = 14 }

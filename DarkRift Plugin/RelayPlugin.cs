@@ -16,6 +16,8 @@ namespace RelayServerPlugin
         public override bool ThreadSafe => true;
         List<Room> rooms = new List<Room>();
         ArrayPool<byte> readBuffers = ArrayPool<byte>.Create(1200, 50);
+        List<ushort> pendingConnections = new List<ushort>();
+        string authKey = "";
 
         public override Version Version => new Version("1.0");
 
@@ -23,13 +25,17 @@ namespace RelayServerPlugin
         {
             ClientManager.ClientConnected += ClientManager_ClientConnected;
             ClientManager.ClientDisconnected += ClientManager_ClientDisconnected;
+            authKey = string.IsNullOrEmpty(loadData.Settings["password"]) ? "" : loadData.Settings["password"];
             Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine("[DarkReflectiveMirror] Relay server started!");
+            Console.WriteLine("[DarkReflectiveMirror] Authentication Key set to: " + authKey);
             Console.ForegroundColor = ConsoleColor.White;
         }
 
         private void ClientManager_ClientDisconnected(object sender, ClientDisconnectedEventArgs e)
         {
+            pendingConnections.RemoveAll(x => x == e.Client.ID);
+
             e.Client.MessageReceived -= Client_MessageReceived;
             LeaveRoom(e.Client.ID);
         }
@@ -37,6 +43,15 @@ namespace RelayServerPlugin
         private void ClientManager_ClientConnected(object sender, ClientConnectedEventArgs e)
         {
             e.Client.MessageReceived += Client_MessageReceived;
+            pendingConnections.Add(e.Client.ID);
+            using (DarkRiftWriter writer = DarkRiftWriter.Create())
+            {
+                using (Message sendAuthRequest = Message.Create((ushort)OpCodes.AuthenticationRequest, writer))
+                {
+                    e.Client.SendMessage(sendAuthRequest, SendMode.Reliable);
+                }
+            }
+
         }
 
         private void Client_MessageReceived(object sender, MessageReceivedEventArgs e)
@@ -47,8 +62,29 @@ namespace RelayServerPlugin
                 using (DarkRiftReader reader = message.GetReader())
                 {
                     OpCodes opCode = (OpCodes)message.Tag;
+
+                    if(opCode != OpCodes.AuthenticationResponse && pendingConnections.Contains(e.Client.ID))
+                    {
+                        pendingConnections.Remove(e.Client.ID);
+                        LeaveRoom(e.Client.ID);
+                        e.Client.Disconnect();
+                        return;
+                    }
+
                     switch (opCode)
                     {
+                        case OpCodes.AuthenticationResponse:
+                            if(reader.ReadString() == authKey)
+                            {
+                                pendingConnections.Remove(e.Client.ID);
+                            }
+                            else
+                            {
+                                pendingConnections.Remove(e.Client.ID);
+                                LeaveRoom(e.Client.ID);
+                                e.Client.Disconnect();
+                            }
+                            break;
                         case OpCodes.RequestID:
                             SendClientID(e);
                             break;
@@ -283,5 +319,5 @@ namespace RelayServerPlugin
         public List<IClient> Clients;
     }
 
-    enum OpCodes { Default = 0, RequestID = 1, JoinServer = 2, SendData = 3, GetID = 4, ServerJoined = 5, GetData = 6, CreateRoom = 7, ServerLeft = 8, PlayerDisconnected = 9, RoomCreated = 10, LeaveRoom = 11, KickPlayer = 12 }
+    enum OpCodes { Default = 0, RequestID = 1, JoinServer = 2, SendData = 3, GetID = 4, ServerJoined = 5, GetData = 6, CreateRoom = 7, ServerLeft = 8, PlayerDisconnected = 9, RoomCreated = 10, LeaveRoom = 11, KickPlayer = 12, AuthenticationRequest = 13, AuthenticationResponse = 14 }
 }

@@ -25,21 +25,34 @@ Disconnects from the relay will not auto reconnect **yet**. This is soon to come
 Now for the juicy part, using it. Like I mentioned in the 'What' section, this is a prototype so if theres problems, please report them to me. Also PRs are also always welcomed! :)
 
 First things first, you will need:
-* Mirror, Also install that from Asset Store or github.
+* Mirror, Install that from Asset Store or github.
 * Download the latest release of Dark Reflective Mirror Unity Package and put that in your project also. Download from: [Releases](https://github.com/Derek-R-S/Dark-Reflective-Mirror/releases)
-* DarkRift 2, If you install the Unity Package from the releases you can move on to the setup. If you prefer to install DarkRift 2 manually you will need to do a few things. First download it from the asset store, then move the DarkRift folder from Assets/DarkRift to Mirror/Runtime/Transports/DarkReflectiveMirror/DarkRift, then you will need to take the Editor folder from both the Client and Server folders inside of the DarkRift folder and put them in the root of your assets.
+* DarkRift 2, You will need to install DarkRift 2 manually you will need to do a few things. First download it from the asset store, then move the DarkRift folder from Assets/DarkRift to Mirror/Runtime/Transports/DarkReflectiveMirror/DarkRift, then you will need to take the Editor folder from both the Client and Server folders inside of the DarkRift folder and put them in the root of your assets.
 
 #### Setting up the unity project
 
 One important thing is setting up the Script Execution Order. Open that tab by clicking Edit>Project Settings, then click the Script Execution Order tab. Click the plus in the bottom right and set DarkReflectiveMirrorTransport to 1002 and click apply.
 
 #### Client Setup
-Running a client is fairly straight forward, attach the DarkReflectiveMirrorTransport script to your NetworkManager and set it as the transport. Put in the IP/Port of your relay server (ignore the ip/port of the UnityClient script), turn off Auto Connect on the UnityClient script and assign DarkReflectiveMirror as the Transport on the NetworkManager. When you start a server, you can simply get the URI from the transport and use that to connect. If you wish to connect without the URI, the DarkReflectiveMirror component has a public "Server ID" field which is what clients would set as the address to connect to.
+Running a client is fairly straight forward, attach the DarkReflectiveMirrorTransport script to your NetworkManager and set it as the transport. Put in the IP/Port of your relay server (ignore the ip/port of the UnityClient script), turn off Auto Connect on the UnityClient script and assign DarkReflectiveMirror as the Transport on the NetworkManager. When you start a server, you can simply get the URI from the transport and use that to connect. If you wish to connect without the URI, the DarkReflectiveMirror component has a public "Server ID" field which is what clients would set as the address to connect to. 
+
+If your relay server has a password, enter it in the relayPassword field or else you wont be able to connect. By default the relays have no password.
  
-Note: If you would like to test without creating a server, feel free to use my test server with IP: 34.72.21.213 and port 4296 which is in there by default  :)
+Note: If you would like to test without creating a server, feel free to use my test server with IP: 34.72.21.213 and port 4296, no password. Which is in there by default  :)
 
 #### Server Setup
 DarkRift 2 includes a "DarkRift Server (.NET Framework/Core).zip" file in its assets, you will need that for the server. For this demonstration I will be explaining how to host the .NET framework version on a windows machine but running it on a linux machine is fairly straight forward and they have answered it in their discord plenty of times so you should be able to find an answer there. So take the server zip file and extract it to somewhere out of your unity project (Like your desktop in a folder). Download the Server Plugin from the [Releases](https://github.com/Derek-R-S/Dark-Reflective-Mirror/releases) and merge it with your DarkRift server folder. Plugins and Lib folder should merge and put the required files automatically in the right spot. Lastly run DarkRift.Server.Console.exe and it should say Relay Server Started. Then you are good! By default DarkRift server uses port 4296 UDP and TCP so make sure your server has those open. You can change those ports in the Server.config file.
+
+If you would like to setup a password on your server you will need to put in the following into your server.config file, make sure to overwrite the existing plugins area in the config file.
+
+```
+  <plugins loadByDefault="true">
+    <plugin type="RelayPlugin">
+      <settings password="Put your password here!" />
+    </plugin>
+  </plugins>
+
+```
 
 \*The free version only includes a .NET framework server which from my benchmarks, uses way more performance(More than double!) than the .NET core server. Although you could compile your own .NET core server using the DarkRift.Server.dll from the free version, this requires looking at the functions and understanding how to start a server using it.
 
