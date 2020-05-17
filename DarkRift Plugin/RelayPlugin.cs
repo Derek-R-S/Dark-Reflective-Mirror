@@ -92,7 +92,8 @@ namespace RelayServerPlugin
                             int maxPlayers = reader.ReadInt32();
                             string serverName = reader.ReadString();
                             bool isPublic = reader.ReadBoolean();
-                            CreateRoom(e, maxPlayers, serverName, isPublic);
+                            string serverData = reader.ReadString();
+                            CreateRoom(e, maxPlayers, serverName, isPublic, serverData);
                             break;
                         case OpCodes.JoinServer:
                             ushort hostID = reader.ReadUInt16();
@@ -138,6 +139,7 @@ namespace RelayServerPlugin
                         writer.Write(rooms[i].Clients.Count + 1);
                         writer.Write(rooms[i].MaxPlayers);
                         writer.Write(rooms[i].Host.ID);
+                        writer.Write(rooms[i].ServerData);
                     }
                 }
 
@@ -253,7 +255,7 @@ namespace RelayServerPlugin
             }
         }
 
-        void CreateRoom(MessageReceivedEventArgs e, int maxPlayers = 10, string serverName = "My Server", bool isPublic = true)
+        void CreateRoom(MessageReceivedEventArgs e, int maxPlayers = 10, string serverName = "My Server", bool isPublic = true, string serverData = "")
         {
             LeaveRoom(e.Client);
 
@@ -265,7 +267,8 @@ namespace RelayServerPlugin
                     MaxPlayers = maxPlayers,
                     Clients = new List<IClient>(),
                     ServerName = serverName,
-                    PublicServer = isPublic
+                    PublicServer = isPublic,
+                    ServerData = serverData
                 };
 
                 rooms.Add(room);
@@ -348,6 +351,7 @@ namespace RelayServerPlugin
     {
         public IClient Host;
         public string ServerName;
+        public string ServerData;
         public bool PublicServer;
         public int MaxPlayers;
         public List<IClient> Clients;

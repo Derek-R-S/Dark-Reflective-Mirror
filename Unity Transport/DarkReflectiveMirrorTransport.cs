@@ -21,10 +21,12 @@ public class DarkReflectiveMirrorTransport : Transport
     [Header("Server Data")]
     public int maxServerPlayers = 10;
     public string serverName = "My awesome server!";
+    public string extraServerData = "Cool Map 1";
     [Tooltip("This allows you to make 'private' servers that do not show up on the built in server list.")]
     public bool showOnServerList = true;
     public UnityEvent serverListUpdated;
     public List<RelayServerInfo> relayServerList = new List<RelayServerInfo>();
+    [HideInInspector] public bool sentAuthentication = false;
     public const string Scheme = "darkrelay";
     private BiDictionary<ushort, int> connectedClients = new BiDictionary<ushort, int>();
     private UnityClient drClient;
@@ -68,6 +70,7 @@ public class DarkReflectiveMirrorTransport : Transport
                             using (Message sendAuthenticationResponse = Message.Create((ushort)OpCodes.AuthenticationResponse, writer))
                                 drClient.Client.SendMessage(sendAuthenticationResponse, SendMode.Reliable);
                         }
+                        sentAuthentication = true;
                         break;
                     case OpCodes.GetData:
                         int dataLength = reader.ReadInt32();
@@ -129,7 +132,8 @@ public class DarkReflectiveMirrorTransport : Transport
                                 serverName = reader.ReadString(),
                                 currentPlayers = reader.ReadInt32(),
                                 maxPlayers = reader.ReadInt32(),
-                                serverID = reader.ReadUInt16()
+                                serverID = reader.ReadUInt16(),
+                                serverData = reader.ReadString()
                             });
                         }
                         serverListUpdated?.Invoke();
@@ -321,6 +325,7 @@ public class DarkReflectiveMirrorTransport : Transport
             writer.Write(maxServerPlayers);
             writer.Write(serverName);
             writer.Write(showOnServerList);
+            writer.Write(extraServerData);
             using (Message sendStartMessage = Message.Create((ushort)OpCodes.CreateRoom, writer))
                 drClient.Client.SendMessage(sendStartMessage, SendMode.Reliable);
         }
@@ -376,6 +381,7 @@ public struct RelayServerInfo
     public int currentPlayers;
     public int maxPlayers;
     public ushort serverID;
+    public string serverData;
 }
 
 enum OpCodes { Default = 0, RequestID = 1, JoinServer = 2, SendData = 3, GetID = 4, ServerJoined = 5, GetData = 6, CreateRoom = 7, ServerLeft = 8, PlayerDisconnected = 9, RoomCreated = 10, LeaveRoom = 11, KickPlayer = 12, AuthenticationRequest = 13, AuthenticationResponse = 14, RequestServers = 15, ServerListResponse = 16 }
