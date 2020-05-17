@@ -325,6 +325,7 @@ namespace RelayServerPlugin
                             // If we were in a room, tell the host that we have been disconnected.
                             using (DarkRiftWriter writer = DarkRiftWriter.Create())
                             {
+                                writer.Write(e);
                                 using (Message sendDisconnectMessage = Message.Create((ushort)OpCodes.PlayerDisconnected, writer))
                                 {
                                     rooms[i].Host.SendMessage(sendDisconnectMessage, SendMode.Reliable);
