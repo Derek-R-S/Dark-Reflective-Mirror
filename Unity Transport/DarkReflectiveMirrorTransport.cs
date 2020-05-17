@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Net;
 using UnityEngine;
+using UnityEngine.Events;
 
 [RequireComponent(typeof(UnityClient))]
 public class DarkReflectiveMirrorTransport : Transport
@@ -22,6 +23,7 @@ public class DarkReflectiveMirrorTransport : Transport
     public string serverName = "My awesome server!";
     [Tooltip("This allows you to make 'private' servers that do not show up on the built in server list.")]
     public bool showOnServerList = true;
+    public UnityEvent serverListUpdated;
     public List<RelayServerInfo> relayServerList = new List<RelayServerInfo>();
     public const string Scheme = "darkrelay";
     private BiDictionary<ushort, int> connectedClients = new BiDictionary<ushort, int>();
@@ -130,6 +132,7 @@ public class DarkReflectiveMirrorTransport : Transport
                                 serverID = reader.ReadUInt16()
                             });
                         }
+                        serverListUpdated?.Invoke();
                         break;
 
                 }
