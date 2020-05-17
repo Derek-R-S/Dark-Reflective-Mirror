@@ -37,6 +37,12 @@ One important thing is setting up the Script Execution Order. Open that tab by c
 Running a client is fairly straight forward, attach the DarkReflectiveMirrorTransport script to your NetworkManager and set it as the transport. Put in the IP/Port of your relay server (ignore the ip/port of the UnityClient script), turn off Auto Connect on the UnityClient script and assign DarkReflectiveMirror as the Transport on the NetworkManager. When you start a server, you can simply get the URI from the transport and use that to connect. If you wish to connect without the URI, the DarkReflectiveMirror component has a public "Server ID" field which is what clients would set as the address to connect to. 
 
 If your relay server has a password, enter it in the relayPassword field or else you wont be able to connect. By default the relays have no password.
+
+##### Server List
+
+Dark Reflective Mirror has a built in room/server list if you would like to use it. To use it you need to set all the values in the 'Server Data' tab in the transport. Also if you would like to make the server show on the list, make sure "Show on server list" is checked. Once you create a server, you cannot update those values unless you restart the server.
+
+To request the server list you need a reference to the DarkReflectiveMirrorTransport from your script and call 'RequestServerList()'. This will invoke a request to the server to update our server list. Once the response is recieved the field 'relayServerList' will be populated and you can get all the servers from there.
  
 Note: If you would like to test without creating a server, feel free to use my test server with IP: 34.72.21.213 and port 4296, no password. Which is in there by default  :)
 

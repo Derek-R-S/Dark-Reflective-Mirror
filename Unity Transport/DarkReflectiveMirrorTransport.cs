@@ -2,6 +2,7 @@
 using DarkRift;
 using DarkRift.Client.Unity;
 using Mirror;
+using Mirror.Websocket;
 using System;
 using System.Collections;
 using System.Collections.Generic;
@@ -14,15 +15,21 @@ public class DarkReflectiveMirrorTransport : Transport
 {
     public string relayIP = "34.72.21.213";
     public ushort relayPort = 4296;
-    public int maxServerPlayers = 10;
     [Tooltip("If your relay server has a password enter it here, or else leave it blank.")]
     public string relayPassword;
+    [Header("Server Data")]
+    public int maxServerPlayers = 10;
+    public string serverName = "My awesome server!";
+    [Tooltip("This allows you to make 'private' servers that do not show up on the built in server list.")]
+    public bool showOnServerList = true;
+    public List<RelayServerInfo> relayServerList = new List<RelayServerInfo>();
     public const string Scheme = "darkrelay";
     private BiDictionary<ushort, int> connectedClients = new BiDictionary<ushort, int>();
     private UnityClient drClient;
     private bool isClient;
     private bool isConnected;
     private bool isServer;
+    [Header("Current Server Info")]
     [Tooltip("This what what others use to connect, as soon as you start a server this will be valid. It can even be 0 if you are the first client on the relay!")]
     public ushort serverID;
     private bool shutdown = false;
@@ -110,12 +117,35 @@ public class DarkReflectiveMirrorTransport : Transport
                             currentMemberID++;
                         }
                         break;
+                    case OpCodes.ServerListResponse:
+                        int serverListCount = reader.ReadInt32();
+                        relayServerList.Clear();
+                        for(int i = 0; i < serverListCount; i++)
+                        {
+                            relayServerList.Add(new RelayServerInfo()
+                            {
+                                serverName = reader.ReadString(),
+                                currentPlayers = reader.ReadInt32(),
+                                maxPlayers = reader.ReadInt32(),
+                                serverID = reader.ReadUInt16()
+                            });
+                        }
+                        break;
 
                 }
             }
         }
         catch {
             // Server shouldnt send messed up data but we do have an unreliable channel, so eh.
+        }
+    }
+
+    public void RequestServerList()
+    {
+        using (DarkRiftWriter writer = DarkRiftWriter.Create())
+        {
+            using (Message sendServerListRequest = Message.Create((ushort)OpCodes.RequestServers, writer))
+                drClient.SendMessage(sendServerListRequest, SendMode.Reliable);
         }
     }
 
@@ -286,6 +316,8 @@ public class DarkReflectiveMirrorTransport : Transport
         using (DarkRiftWriter writer = DarkRiftWriter.Create())
         {
             writer.Write(maxServerPlayers);
+            writer.Write(serverName);
+            writer.Write(showOnServerList);
             using (Message sendStartMessage = Message.Create((ushort)OpCodes.CreateRoom, writer))
                 drClient.Client.SendMessage(sendStartMessage, SendMode.Reliable);
         }
@@ -335,4 +367,12 @@ public class DarkReflectiveMirrorTransport : Transport
     }
 }
 
-enum OpCodes { Default = 0, RequestID = 1, JoinServer = 2, SendData = 3, GetID = 4, ServerJoined = 5, GetData = 6, CreateRoom = 7, ServerLeft = 8, PlayerDisconnected = 9, RoomCreated = 10, LeaveRoom = 11, KickPlayer = 12, AuthenticationRequest = 13, AuthenticationResponse = 14 }
+public struct RelayServerInfo
+{
+    public string serverName;
+    public int currentPlayers;
+    public int maxPlayers;
+    public ushort serverID;
+}
+
+enum OpCodes { Default = 0, RequestID = 1, JoinServer = 2, SendData = 3, GetID = 4, ServerJoined = 5, GetData = 6, CreateRoom = 7, ServerLeft = 8, PlayerDisconnected = 9, RoomCreated = 10, LeaveRoom = 11, KickPlayer = 12, AuthenticationRequest = 13, AuthenticationResponse = 14, RequestServers = 15, ServerListResponse = 16 }

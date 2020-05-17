@@ -90,7 +90,9 @@ namespace RelayServerPlugin
                             break;
                         case OpCodes.CreateRoom:
                             int maxPlayers = reader.ReadInt32();
-                            CreateRoom(e, maxPlayers);
+                            string serverName = reader.ReadString();
+                            bool isPublic = reader.ReadBoolean();
+                            CreateRoom(e, maxPlayers, serverName, isPublic);
                             break;
                         case OpCodes.JoinServer:
                             ushort hostID = reader.ReadUInt16();
@@ -109,12 +111,40 @@ namespace RelayServerPlugin
                             ushort clientID = reader.ReadUInt16();
                             LeaveRoom(clientID, e.Client.ID);
                             break;
+                        case OpCodes.RequestServers:
+                            SendServerList(e);
+                            break;
                     }
                 }
             }
             catch
             {
                 // Do disconnect/kick maybe later if they do be acting up.
+            }
+        }
+
+        void SendServerList(MessageReceivedEventArgs e)
+        {
+            using (DarkRiftWriter writer = DarkRiftWriter.Create())
+            {
+                writer.Write(rooms.Where(x => x.PublicServer).Count());
+
+                // Since we are using TCP for reliable, MTU isnt important. If you use a RUDP transport for DarkRift, make sure it has fragmentation or split the server list up into chunks of a few per packet.
+                for (int i = 0; i < rooms.Count; i++)
+                {
+                    if (rooms[i].PublicServer)
+                    {
+                        writer.Write(rooms[i].ServerName);
+                        writer.Write(rooms[i].Clients.Count + 1);
+                        writer.Write(rooms[i].MaxPlayers);
+                        writer.Write(rooms[i].Host.ID);
+                    }
+                }
+
+                using (Message sendServerList = Message.Create((ushort)OpCodes.ServerListResponse, writer))
+                {
+                    e.Client.SendMessage(sendServerList, SendMode.Reliable);
+                }
             }
         }
 
@@ -189,7 +219,7 @@ namespace RelayServerPlugin
             {
                 if(rooms[i].Host.ID == hostID)
                 {
-                    if(rooms[i].Clients.Count < rooms[i].MaxPlayers)
+                    if(rooms[i].Clients.Count <= rooms[i].MaxPlayers)
                     {
                         rooms[i].Clients.Add(e.Client);
 
@@ -223,7 +253,7 @@ namespace RelayServerPlugin
             }
         }
 
-        void CreateRoom(MessageReceivedEventArgs e, int maxPlayers = 10)
+        void CreateRoom(MessageReceivedEventArgs e, int maxPlayers = 10, string serverName = "My Server", bool isPublic = true)
         {
             LeaveRoom(e.Client);
 
@@ -233,7 +263,9 @@ namespace RelayServerPlugin
                 {
                     Host = e.Client,
                     MaxPlayers = maxPlayers,
-                    Clients = new List<IClient>()
+                    Clients = new List<IClient>(),
+                    ServerName = serverName,
+                    PublicServer = isPublic
                 };
 
                 rooms.Add(room);
@@ -315,9 +347,11 @@ namespace RelayServerPlugin
     struct Room
     {
         public IClient Host;
+        public string ServerName;
+        public bool PublicServer;
         public int MaxPlayers;
         public List<IClient> Clients;
     }
 
-    enum OpCodes { Default = 0, RequestID = 1, JoinServer = 2, SendData = 3, GetID = 4, ServerJoined = 5, GetData = 6, CreateRoom = 7, ServerLeft = 8, PlayerDisconnected = 9, RoomCreated = 10, LeaveRoom = 11, KickPlayer = 12, AuthenticationRequest = 13, AuthenticationResponse = 14 }
+    enum OpCodes { Default = 0, RequestID = 1, JoinServer = 2, SendData = 3, GetID = 4, ServerJoined = 5, GetData = 6, CreateRoom = 7, ServerLeft = 8, PlayerDisconnected = 9, RoomCreated = 10, LeaveRoom = 11, KickPlayer = 12, AuthenticationRequest = 13, AuthenticationResponse = 14, RequestServers = 15, ServerListResponse = 16 }
 }
