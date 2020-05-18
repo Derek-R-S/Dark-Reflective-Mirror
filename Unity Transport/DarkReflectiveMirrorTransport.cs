@@ -8,6 +8,7 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
+using UnityEditor.PackageManager.Requests;
 using UnityEngine;
 using UnityEngine.Events;
 
@@ -26,7 +27,7 @@ public class DarkReflectiveMirrorTransport : Transport
     public bool showOnServerList = true;
     public UnityEvent serverListUpdated;
     public List<RelayServerInfo> relayServerList = new List<RelayServerInfo>();
-    [HideInInspector] public bool sentAuthentication = false;
+    [HideInInspector] public bool isAuthenticated = false;
     public const string Scheme = "darkrelay";
     private BiDictionary<ushort, int> connectedClients = new BiDictionary<ushort, int>();
     private UnityClient drClient;
@@ -63,6 +64,9 @@ public class DarkReflectiveMirrorTransport : Transport
                 OpCodes opCode = (OpCodes)message.Tag;
                 switch (opCode)
                 {
+                    case OpCodes.Authenticated:
+                        isAuthenticated = true;
+                        break;
                     case OpCodes.AuthenticationRequest:
                         using (DarkRiftWriter writer = DarkRiftWriter.Create())
                         {
@@ -70,7 +74,6 @@ public class DarkReflectiveMirrorTransport : Transport
                             using (Message sendAuthenticationResponse = Message.Create((ushort)OpCodes.AuthenticationResponse, writer))
                                 drClient.Client.SendMessage(sendAuthenticationResponse, SendMode.Reliable);
                         }
-                        sentAuthentication = true;
                         break;
                     case OpCodes.GetData:
                         int dataLength = reader.ReadInt32();
@@ -147,17 +150,50 @@ public class DarkReflectiveMirrorTransport : Transport
         }
     }
 
-    public void RequestServerList()
+    public void UpdateServerData(string serverData, int maxPlayers)
     {
+        if (!isServer)
+            return;
+
         using (DarkRiftWriter writer = DarkRiftWriter.Create())
         {
-            using (Message sendServerListRequest = Message.Create((ushort)OpCodes.RequestServers, writer))
-                drClient.SendMessage(sendServerListRequest, SendMode.Reliable);
+            writer.Write(serverData);
+            writer.Write(maxPlayers);
+            using (Message sendUpdateRequest = Message.Create((ushort)OpCodes.UpdateRoomData, writer))
+                drClient.SendMessage(sendUpdateRequest, SendMode.Reliable);
+        }
+    }
+
+    public void RequestServerList()
+    {
+        // Start a coroutine just in case the client tries to request the server list too early.
+        StopCoroutine(RequestServerListWait());
+        StartCoroutine(RequestServerListWait());
+    }
+
+    IEnumerator RequestServerListWait()
+    {
+        int tries = 0;
+        // Wait up to a maximum of 10 seconds before giving up.
+        while(tries < 40)
+        {
+            if (isAuthenticated)
+            {
+                using (DarkRiftWriter writer = DarkRiftWriter.Create())
+                {
+                    using (Message sendServerListRequest = Message.Create((ushort)OpCodes.RequestServers, writer))
+                        drClient.SendMessage(sendServerListRequest, SendMode.Reliable);
+                }
+                break;
+            }
+
+            yield return new WaitForSeconds(0.25f);
         }
     }
 
     private void Client_Disconnected(object sender, DarkRift.Client.DisconnectedEventArgs e)
     {
+        isAuthenticated = false;
         if (isClient)
         {
             isClient = false;
@@ -187,9 +223,29 @@ public class DarkReflectiveMirrorTransport : Transport
             return;
         }
 
+        // Make sure the client is authenticated before trying to join a room.
+        int timeOut = 0;
+        while (true)
+        {
+            timeOut++;
+            drClient.Dispatcher.ExecuteDispatcherTasks();
+            if (isAuthenticated || timeOut >= 100)
+                break;
+
+            System.Threading.Thread.Sleep(100);
+        }
+
+        if (timeOut >= 100 && !isAuthenticated)
+        {
+            Debug.Log("Failed to authenticate in time with backend! Make sure your secret key and IP/port are correct.");
+            OnClientDisconnected?.Invoke();
+            return;
+        }
+
         isClient = true;
         isConnected = false;
 
+        // Tell the server we want to join a room
         using (DarkRiftWriter writer = DarkRiftWriter.Create())
         {
             writer.Write(hostID);
@@ -214,8 +270,8 @@ public class DarkReflectiveMirrorTransport : Transport
 
         using (DarkRiftWriter writer = DarkRiftWriter.Create())
         {
-            using (Message sendJoinMessage = Message.Create((ushort)OpCodes.LeaveRoom, writer))
-                drClient.Client.SendMessage(sendJoinMessage, SendMode.Reliable);
+            using (Message sendLeaveMessage = Message.Create((ushort)OpCodes.LeaveRoom, writer))
+                drClient.Client.SendMessage(sendLeaveMessage, SendMode.Reliable);
         }
     }
 
@@ -320,6 +376,24 @@ public class DarkReflectiveMirrorTransport : Transport
         isConnected = false;
         currentMemberID = 1;
 
+        // Wait to make sure we are authenticated with the server before actually trying to request creating a room.
+        int timeOut = 0;
+        while (true)
+        {
+            timeOut++;
+            drClient.Dispatcher.ExecuteDispatcherTasks();
+            if (isAuthenticated || timeOut >= 100)
+                break;
+
+            System.Threading.Thread.Sleep(100);
+        }
+
+        if(timeOut >= 100)
+        {
+            Debug.Log("Failed to authenticate in time with backend! Make sure your secret key and IP/port are correct.");
+            return;
+        }
+
         using (DarkRiftWriter writer = DarkRiftWriter.Create())
         {
             writer.Write(maxServerPlayers);
@@ -331,7 +405,7 @@ public class DarkReflectiveMirrorTransport : Transport
         }
 
         // Wait until server is actually ready or 10 seconds have passed and server failed
-        int timeOut = 0;
+        timeOut = 0;
         while (true)
         {
             timeOut++;
@@ -343,7 +417,7 @@ public class DarkReflectiveMirrorTransport : Transport
 
         if(timeOut >= 100)
         {
-            Debug.LogError("FAILED TO CREATE SERVER ON RELAY!");
+            Debug.LogError("Failed to create the server on the relay. Are you connected? Double check the secret key and IP/port.");
         }
     }
 
@@ -384,4 +458,4 @@ public struct RelayServerInfo
     public string serverData;
 }
 
-enum OpCodes { Default = 0, RequestID = 1, JoinServer = 2, SendData = 3, GetID = 4, ServerJoined = 5, GetData = 6, CreateRoom = 7, ServerLeft = 8, PlayerDisconnected = 9, RoomCreated = 10, LeaveRoom = 11, KickPlayer = 12, AuthenticationRequest = 13, AuthenticationResponse = 14, RequestServers = 15, ServerListResponse = 16 }
+enum OpCodes { Default = 0, RequestID = 1, JoinServer = 2, SendData = 3, GetID = 4, ServerJoined = 5, GetData = 6, CreateRoom = 7, ServerLeft = 8, PlayerDisconnected = 9, RoomCreated = 10, LeaveRoom = 11, KickPlayer = 12, AuthenticationRequest = 13, AuthenticationResponse = 14, RequestServers = 15, ServerListResponse = 16, Authenticated = 17, UpdateRoomData = 18 }

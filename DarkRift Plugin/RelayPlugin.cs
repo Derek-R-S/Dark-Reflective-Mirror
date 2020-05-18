@@ -19,7 +19,7 @@ namespace RelayServerPlugin
         List<ushort> pendingConnections = new List<ushort>();
         string authKey = "";
 
-        public override Version Version => new Version("1.0");
+        public override Version Version => new Version("1.6");
 
         public RelayPlugin(PluginLoadData loadData) : base(loadData)
         {
@@ -73,10 +73,20 @@ namespace RelayServerPlugin
 
                     switch (opCode)
                     {
+                        case OpCodes.UpdateRoomData:
+                            string extraData = reader.ReadString();
+                            int newMaxPlayers = reader.ReadInt32();
+                            UpdateRoomData(e, extraData, newMaxPlayers);
+                            break;
                         case OpCodes.AuthenticationResponse:
                             if(reader.ReadString() == authKey)
                             {
                                 pendingConnections.Remove(e.Client.ID);
+                                using (DarkRiftWriter writer = DarkRiftWriter.Create())
+                                {
+                                    using (Message sendAuthed = Message.Create((ushort)OpCodes.Authenticated, writer))
+                                        e.Client.SendMessage(sendAuthed, SendMode.Reliable);
+                                }
                             }
                             else
                             {
@@ -124,6 +134,19 @@ namespace RelayServerPlugin
             }
         }
 
+        void UpdateRoomData(MessageReceivedEventArgs e, string extraData, int maxPlayers)
+        {
+            for(int i = 0; i < rooms.Count; i++)
+            {
+                if(rooms[i].Host.ID == e.Client.ID)
+                {
+                    rooms[i].MaxPlayers = maxPlayers;
+                    rooms[i].ServerData = extraData;
+                    return;
+                }
+            }
+        }
+
         void SendServerList(MessageReceivedEventArgs e)
         {
             using (DarkRiftWriter writer = DarkRiftWriter.Create())
@@ -152,14 +175,12 @@ namespace RelayServerPlugin
 
         void ProcessData(MessageReceivedEventArgs e, DarkRiftReader reader, byte[] data, int length)
         {
-            Room? playersRoom = GetRoomForPlayer(e.Client);
+            Room playersRoom = GetRoomForPlayer(e.Client);
 
             if (playersRoom == null)
                 return;
 
-            Room room = playersRoom.Value;
-
-            if(room.Host == e.Client)
+            if(playersRoom.Host == e.Client)
             {
                 // If the host sent this message then read the ids the host wants this data to be sent to and send it to them.
                 var sendingTo = reader.ReadUInt16s().ToList();
@@ -169,13 +190,13 @@ namespace RelayServerPlugin
                     writer.Write(data);
                     using (Message sendDataMessage = Message.Create((ushort)OpCodes.GetData, writer))
                     {
-                        for (int i = 0; i < room.Clients.Count; i++)
+                        for (int i = 0; i < playersRoom.Clients.Count; i++)
                         {
-                            if (sendingTo.Contains(room.Clients[i].ID))
+                            if (sendingTo.Contains(playersRoom.Clients[i].ID))
                             {
-                                sendingTo.Remove(room.Clients[i].ID);
+                                sendingTo.Remove(playersRoom.Clients[i].ID);
 
-                                room.Clients[i].SendMessage(sendDataMessage, e.SendMode);
+                                playersRoom.Clients[i].SendMessage(sendDataMessage, e.SendMode);
                             }
                         }
                     }
@@ -191,7 +212,7 @@ namespace RelayServerPlugin
                     writer.Write(e.Client.ID);
                     using (Message sendDataMessage = Message.Create((ushort)OpCodes.GetData, writer))
                     {
-                        room.Host.SendMessage(sendDataMessage, e.SendMode);
+                        playersRoom.Host.SendMessage(sendDataMessage, e.SendMode);
                     }
                 }
             }
@@ -199,7 +220,7 @@ namespace RelayServerPlugin
             readBuffers.Return(data, true);
         }
 
-        Room? GetRoomForPlayer(IClient client)
+        Room GetRoomForPlayer(IClient client)
         {
             for(int i = 0; i < rooms.Count; i++)
             {
@@ -348,7 +369,7 @@ namespace RelayServerPlugin
         }
     }
 
-    struct Room
+    class Room
     {
         public IClient Host;
         public string ServerName;
@@ -358,5 +379,5 @@ namespace RelayServerPlugin
         public List<IClient> Clients;
     }
 
-    enum OpCodes { Default = 0, RequestID = 1, JoinServer = 2, SendData = 3, GetID = 4, ServerJoined = 5, GetData = 6, CreateRoom = 7, ServerLeft = 8, PlayerDisconnected = 9, RoomCreated = 10, LeaveRoom = 11, KickPlayer = 12, AuthenticationRequest = 13, AuthenticationResponse = 14, RequestServers = 15, ServerListResponse = 16 }
+    enum OpCodes { Default = 0, RequestID = 1, JoinServer = 2, SendData = 3, GetID = 4, ServerJoined = 5, GetData = 6, CreateRoom = 7, ServerLeft = 8, PlayerDisconnected = 9, RoomCreated = 10, LeaveRoom = 11, KickPlayer = 12, AuthenticationRequest = 13, AuthenticationResponse = 14, RequestServers = 15, ServerListResponse = 16, Authenticated = 17, UpdateRoomData = 18 }
 }
