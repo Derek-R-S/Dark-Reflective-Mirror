@@ -19,7 +19,7 @@ namespace RelayServerPlugin
         List<ushort> pendingConnections = new List<ushort>();
         string authKey = "";
 
-        public override Version Version => new Version("1.6");
+        public override Version Version => new Version("2.0");
 
         public RelayPlugin(PluginLoadData loadData) : base(loadData)
         {
@@ -99,15 +99,13 @@ namespace RelayServerPlugin
                             SendClientID(e);
                             break;
                         case OpCodes.CreateRoom:
-                            int maxPlayers = reader.ReadInt32();
-                            string serverName = reader.ReadString();
-                            bool isPublic = reader.ReadBoolean();
-                            string serverData = reader.ReadString();
-                            CreateRoom(e, maxPlayers, serverName, isPublic, serverData);
+                            CreateRoom(e, reader.ReadInt32(), reader.ReadString(), reader.ReadBoolean(), reader.ReadString(), reader.ReadBoolean(), reader.ReadString());
                             break;
                         case OpCodes.JoinServer:
                             ushort hostID = reader.ReadUInt16();
-                            JoinRoom(e, hostID);
+                            bool useRelay = reader.ReadBoolean();
+                            string clientLocalIP = reader.ReadString();
+                            JoinRoom(e, hostID, useRelay, clientLocalIP);
                             break;
                         case OpCodes.SendData:
                             int length = reader.ReadInt32();
@@ -140,8 +138,17 @@ namespace RelayServerPlugin
             {
                 if(rooms[i].Host.ID == e.Client.ID)
                 {
-                    rooms[i].MaxPlayers = maxPlayers;
-                    rooms[i].ServerData = extraData;
+                    rooms[i] = new Room()
+                    {
+                        ServerData = extraData,
+                        MaxPlayers = maxPlayers,
+                        Host = rooms[i].Host,
+                        Clients = rooms[i].Clients,
+                        ForceRelay = rooms[i].ForceRelay,
+                        PublicServer = rooms[i].PublicServer,
+                        ServerName = rooms[i].ServerName,
+                        ServerLocalIP = rooms[i].ServerLocalIP
+                    };
                     return;
                 }
             }
@@ -175,12 +182,14 @@ namespace RelayServerPlugin
 
         void ProcessData(MessageReceivedEventArgs e, DarkRiftReader reader, byte[] data, int length)
         {
-            Room playersRoom = GetRoomForPlayer(e.Client);
+            Room? room = GetRoomForPlayer(e.Client);
 
-            if (playersRoom == null)
+            if (room == null)
                 return;
 
-            if(playersRoom.Host == e.Client)
+            Room playersRoom = room.Value;
+
+            if (playersRoom.Host == e.Client)
             {
                 // If the host sent this message then read the ids the host wants this data to be sent to and send it to them.
                 var sendingTo = reader.ReadUInt16s().ToList();
@@ -220,7 +229,7 @@ namespace RelayServerPlugin
             readBuffers.Return(data, true);
         }
 
-        Room GetRoomForPlayer(IClient client)
+        Room? GetRoomForPlayer(IClient client)
         {
             for(int i = 0; i < rooms.Count; i++)
             {
@@ -234,7 +243,7 @@ namespace RelayServerPlugin
             return null;
         }
 
-        void JoinRoom(MessageReceivedEventArgs e, ushort hostID)
+        void JoinRoom(MessageReceivedEventArgs e, ushort hostID, bool useRelay, string localIP)
         {
             LeaveRoom(e.Client);
             
@@ -246,14 +255,32 @@ namespace RelayServerPlugin
                     {
                         rooms[i].Clients.Add(e.Client);
 
-                        // Tell both the host that this client connected and tell the client we successfully connected to the room
-                        using (DarkRiftWriter writer = DarkRiftWriter.Create())
+                        if (rooms[i].ForceRelay || useRelay)
                         {
-                            writer.Write(e.Client.ID);
-                            using (Message sendConnectedMessage = Message.Create((ushort)OpCodes.ServerJoined, writer))
+                            // Tell both the host that this client connected and tell the client we successfully connected to the room
+                            using (DarkRiftWriter writer = DarkRiftWriter.Create())
                             {
-                                rooms[i].Host.SendMessage(sendConnectedMessage, SendMode.Reliable);
-                                e.Client.SendMessage(sendConnectedMessage, SendMode.Reliable);
+                                writer.Write(e.Client.ID);
+                                using (Message sendConnectedMessage = Message.Create((ushort)OpCodes.ServerJoined, writer))
+                                {
+                                    rooms[i].Host.SendMessage(sendConnectedMessage, SendMode.Reliable);
+                                    e.Client.SendMessage(sendConnectedMessage, SendMode.Reliable);
+                                }
+                            }
+                        }
+                        else
+                        {
+                            // Tell the client the hosts information so they can attempt a direct connection
+                            using (DarkRiftWriter writer = DarkRiftWriter.Create())
+                            {
+                                if (e.Client.RemoteEndPoints.FirstOrDefault().Address.ToString() == rooms[i].Host.RemoteEndPoints.FirstOrDefault().Address.ToString())
+                                    writer.Write(localIP == rooms[i].ServerLocalIP ? "127.0.0.1" : rooms[i].ServerLocalIP);
+                                else
+                                    writer.Write(rooms[i].Host.RemoteEndPoints.FirstOrDefault().Address.ToString());
+                                using (Message sendServerInfo = Message.Create((ushort)OpCodes.ServerConnectionData, writer))
+                                {
+                                    e.Client.SendMessage(sendServerInfo, SendMode.Reliable);
+                                }
                             }
                         }
                     }
@@ -276,7 +303,7 @@ namespace RelayServerPlugin
             }
         }
 
-        void CreateRoom(MessageReceivedEventArgs e, int maxPlayers = 10, string serverName = "My Server", bool isPublic = true, string serverData = "")
+        void CreateRoom(MessageReceivedEventArgs e, int maxPlayers = 10, string serverName = "My Server", bool isPublic = true, string serverData = "", bool forceRelay = false, string localIP = "127.0.0.1")
         {
             LeaveRoom(e.Client);
 
@@ -289,7 +316,9 @@ namespace RelayServerPlugin
                     Clients = new List<IClient>(),
                     ServerName = serverName,
                     PublicServer = isPublic,
-                    ServerData = serverData
+                    ServerData = serverData,
+                    ForceRelay = forceRelay,
+                    ServerLocalIP = localIP
                 };
 
                 rooms.Add(room);
@@ -369,15 +398,17 @@ namespace RelayServerPlugin
         }
     }
 
-    class Room
+    struct Room
     {
         public IClient Host;
         public string ServerName;
         public string ServerData;
+        public string ServerLocalIP;
         public bool PublicServer;
+        public bool ForceRelay;
         public int MaxPlayers;
         public List<IClient> Clients;
     }
 
-    enum OpCodes { Default = 0, RequestID = 1, JoinServer = 2, SendData = 3, GetID = 4, ServerJoined = 5, GetData = 6, CreateRoom = 7, ServerLeft = 8, PlayerDisconnected = 9, RoomCreated = 10, LeaveRoom = 11, KickPlayer = 12, AuthenticationRequest = 13, AuthenticationResponse = 14, RequestServers = 15, ServerListResponse = 16, Authenticated = 17, UpdateRoomData = 18 }
+    enum OpCodes { Default = 0, RequestID = 1, JoinServer = 2, SendData = 3, GetID = 4, ServerJoined = 5, GetData = 6, CreateRoom = 7, ServerLeft = 8, PlayerDisconnected = 9, RoomCreated = 10, LeaveRoom = 11, KickPlayer = 12, AuthenticationRequest = 13, AuthenticationResponse = 14, RequestServers = 15, ServerListResponse = 16, Authenticated = 17, UpdateRoomData = 18, ServerConnectionData = 19 }
 }

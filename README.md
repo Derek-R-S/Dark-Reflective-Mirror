@@ -26,17 +26,20 @@ Now for the juicy part, using it. Like I mentioned in the 'What' section, this i
 
 First things first, you will need:
 * Mirror, Install that from Asset Store or github.
-* Download the latest release of Dark Reflective Mirror Unity Package and put that in your project also. Download from: [Releases](https://github.com/Derek-R-S/Dark-Reflective-Mirror/releases)
-* DarkRift 2, You will need to install DarkRift 2 manually you will need to do a few things. First download it from the asset store, then move the DarkRift folder from Assets/DarkRift to Mirror/Runtime/Transports/DarkReflectiveMirror/DarkRift, then you will need to take the Editor folder from both the Client and Server folders inside of the DarkRift folder and put them in the root of your assets.
+* Download the latest release of Dark Reflective Mirror Installer Unity Package and put that in your project also. Download from: [Releases](https://github.com/Derek-R-S/Dark-Reflective-Mirror/releases). Once imported open the editor window "Dark Mirror/Installer" and install it.
 
 #### Setting up the unity project
 
-One important thing is setting up the Script Execution Order. Open that tab by clicking Edit>Project Settings, then click the Script Execution Order tab. Click the plus in the bottom right and set DarkReflectiveMirrorTransport to 1002 and click apply.
+The unity package, may already do this. If it does not then follow these steps: Open the tab by clicking Edit>Project Settings, then click the Script Execution Order tab. Click the plus in the bottom right and set DarkReflectiveMirrorTransport to 1002 and click apply.
 
 #### Client Setup
 Running a client is fairly straight forward, attach the DarkReflectiveMirrorTransport script to your NetworkManager and set it as the transport. Put in the IP/Port of your relay server (ignore the ip/port of the UnityClient script), turn off Auto Connect on the UnityClient script and assign DarkReflectiveMirror as the Transport on the NetworkManager. When you start a server, you can simply get the URI from the transport and use that to connect. If you wish to connect without the URI, the DarkReflectiveMirror component has a public "Server ID" field which is what clients would set as the address to connect to. 
 
 If your relay server has a password, enter it in the relayPassword field or else you wont be able to connect. By default the relays have no password.
+
+##### Direct Connecting
+
+Dark Reflective Mirror supports direct connecting for reduce relay usage. To enable Direct Connecting add the component 'Dark Mirror Direct Connect Module' to your network manager, then add any of the follow transports (Telepathy, LLAPI, Ignorance) and set it as the reference in the Direct Connect Module. And thats all there is to it, your dedicated servers will now use direct connect. Just make sure on the transport that 'Force Relay Traffic' is off or else it will ignore the direct connect module.
 
 ##### Server List
 

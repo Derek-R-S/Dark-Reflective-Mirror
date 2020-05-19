@@ -2,50 +2,69 @@
 using DarkRift;
 using DarkRift.Client.Unity;
 using Mirror;
-using Mirror.Websocket;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Linq.Expressions;
 using System.Net;
-using UnityEditor.PackageManager.Requests;
+using System.Net.Sockets;
 using UnityEngine;
 using UnityEngine.Events;
 
 [RequireComponent(typeof(UnityClient))]
 public class DarkReflectiveMirrorTransport : Transport
 {
+    #region Relay Server Variables
     public string relayIP = "34.72.21.213";
     public ushort relayPort = 4296;
+    public bool forceRelayTraffic = false;
     [Tooltip("If your relay server has a password enter it here, or else leave it blank.")]
     public string relayPassword;
+    #endregion
+    #region Server List Data
     [Header("Server Data")]
     public int maxServerPlayers = 10;
     public string serverName = "My awesome server!";
     public string extraServerData = "Cool Map 1";
     [Tooltip("This allows you to make 'private' servers that do not show up on the built in server list.")]
     public bool showOnServerList = true;
+    public bool showDebugLogs = false;
     public UnityEvent serverListUpdated;
     public List<RelayServerInfo> relayServerList = new List<RelayServerInfo>();
     [HideInInspector] public bool isAuthenticated = false;
+    #endregion
+    #region Script Variables
     public const string Scheme = "darkrelay";
-    private BiDictionary<ushort, int> connectedClients = new BiDictionary<ushort, int>();
+    private BiDictionary<ushort, int> connectedRelayClients = new BiDictionary<ushort, int>();
+    private BiDictionary<int, int> connectedDirectClients = new BiDictionary<int, int>();
     private UnityClient drClient;
     private bool isClient;
     private bool isConnected;
     private bool isServer;
+    private bool directConnected = false;
     [Header("Current Server Info")]
     [Tooltip("This what what others use to connect, as soon as you start a server this will be valid. It can even be 0 if you are the first client on the relay!")]
     public ushort serverID;
     private bool shutdown = false;
     private int currentMemberID = 0;
+    private string directConnectAddress = "";
+    #endregion
+    #region Standard Transport Variables
+    [Header("Direct Connect Data")]
+    private DarkMirrorDirectConnectModule directConnectModule;
+    [Tooltip("The amount of time (in secs) it takes before we give up trying to direct connect.")]
+    public float directConnectTimeout = 5;
+    #endregion
 
     void Awake()
     {
         IPAddress ipAddress;
-        if (!IPAddress.TryParse(relayIP, out ipAddress)) { ipAddress = Dns.GetHostEntry(relayIP).AddressList[0]; }
+        if (!IPAddress.TryParse(relayIP, out ipAddress)) 
+            ipAddress = Dns.GetHostEntry(relayIP).AddressList[0];
 
         drClient = GetComponent<UnityClient>();
+        directConnectModule = GetComponent<DarkMirrorDirectConnectModule>();
 
         if (drClient.ConnectionState == ConnectionState.Disconnected)
             drClient.Connect(IPAddress.Parse(ipAddress.ToString()), relayPort, true);
@@ -53,6 +72,8 @@ public class DarkReflectiveMirrorTransport : Transport
         drClient.Disconnected += Client_Disconnected;
         drClient.MessageReceived += Client_MessageReceived;
     }
+
+    #region Relay Functions
 
     private void Client_MessageReceived(object sender, DarkRift.Client.MessageReceivedEventArgs e)
     {
@@ -64,8 +85,23 @@ public class DarkReflectiveMirrorTransport : Transport
                 OpCodes opCode = (OpCodes)message.Tag;
                 switch (opCode)
                 {
+                    case OpCodes.ServerConnectionData:
+                        string serverIP = reader.ReadString();
+
+                        if (directConnectModule == null)
+                        {
+                            directConnectAddress = "";
+                            return;
+                        }
+
+                        directConnectAddress = serverIP;
+                        if (showDebugLogs)
+                            Debug.Log("Received direct connect info from server.");
+                        break;
                     case OpCodes.Authenticated:
                         isAuthenticated = true;
+                        if (showDebugLogs)
+                            Debug.Log("Authenticated with server.");
                         break;
                     case OpCodes.AuthenticationRequest:
                         using (DarkRiftWriter writer = DarkRiftWriter.Create())
@@ -74,6 +110,8 @@ public class DarkReflectiveMirrorTransport : Transport
                             using (Message sendAuthenticationResponse = Message.Create((ushort)OpCodes.AuthenticationResponse, writer))
                                 drClient.Client.SendMessage(sendAuthenticationResponse, SendMode.Reliable);
                         }
+                        if (showDebugLogs)
+                            Debug.Log("Server requested authentication key.");
                         break;
                     case OpCodes.GetData:
                         int dataLength = reader.ReadInt32();
@@ -81,7 +119,7 @@ public class DarkReflectiveMirrorTransport : Transport
                         System.Buffer.BlockCopy(reader.ReadBytes(), 0, receivedData, 0, dataLength);
 
                         if (isServer)
-                            OnServerDataReceived?.Invoke(connectedClients.GetByFirst(reader.ReadUInt16()), new ArraySegment<byte>(receivedData), e.SendMode == SendMode.Unreliable ? 1 : 0);
+                            OnServerDataReceived?.Invoke(connectedRelayClients.GetByFirst(reader.ReadUInt16()), new ArraySegment<byte>(receivedData), e.SendMode == SendMode.Unreliable ? 1 : 0);
 
                         if (isClient)
                             OnClientDataReceived?.Invoke(new ArraySegment<byte>(receivedData), e.SendMode == SendMode.Unreliable ? 1 : 0);
@@ -101,13 +139,18 @@ public class DarkReflectiveMirrorTransport : Transport
                         if (isServer)
                         {
                             ushort user = reader.ReadUInt16();
-                            OnServerDisconnected?.Invoke(connectedClients.GetByFirst(user));
+                            OnServerDisconnected?.Invoke(connectedRelayClients.GetByFirst(user));
+                            connectedRelayClients.Remove(user);
+                            if (showDebugLogs)
+                                Debug.Log($"Client {user} left room.");
                         }
 
                         break;
                     case OpCodes.RoomCreated:
                         serverID = reader.ReadUInt16();
                         isConnected = true;
+                        if (showDebugLogs)
+                            Debug.Log("Server Created on relay.");
                         break;
                     case OpCodes.ServerJoined:
                         ushort clientID = reader.ReadUInt16();
@@ -116,13 +159,17 @@ public class DarkReflectiveMirrorTransport : Transport
                         {
                             isConnected = true;
                             OnClientConnected?.Invoke();
+                            if (showDebugLogs)
+                                Debug.Log("Successfully joined server.");
                         }
 
                         if (isServer)
                         {
-                            connectedClients.Add(clientID, currentMemberID);
+                            connectedRelayClients.Add(clientID, currentMemberID);
                             OnServerConnected?.Invoke(currentMemberID);
                             currentMemberID++;
+                            if (showDebugLogs)
+                                Debug.Log($"Client {clientID} joined the server.");
                         }
                         break;
                     case OpCodes.ServerListResponse:
@@ -140,6 +187,8 @@ public class DarkReflectiveMirrorTransport : Transport
                             });
                         }
                         serverListUpdated?.Invoke();
+                        if (showDebugLogs)
+                            Debug.Log("Received Server List.");
                         break;
 
                 }
@@ -148,6 +197,19 @@ public class DarkReflectiveMirrorTransport : Transport
         catch {
             // Server shouldnt send messed up data but we do have an unreliable channel, so eh.
         }
+    }
+
+    public static string GetLocalIPAddress()
+    {
+        var host = Dns.GetHostEntry(Dns.GetHostName());
+        foreach (var ip in host.AddressList)
+        {
+            if (ip.AddressFamily == AddressFamily.InterNetwork)
+            {
+                return ip.ToString();
+            }
+        }
+        return "0.0.0.0";
     }
 
     public void UpdateServerData(string serverData, int maxPlayers)
@@ -186,7 +248,6 @@ public class DarkReflectiveMirrorTransport : Transport
                 }
                 break;
             }
-
             yield return new WaitForSeconds(0.25f);
         }
     }
@@ -201,6 +262,9 @@ public class DarkReflectiveMirrorTransport : Transport
             OnClientDisconnected?.Invoke();
         }
     }
+
+    #endregion
+    #region Mirror Functions
 
     public override bool Available()
     {
@@ -244,13 +308,96 @@ public class DarkReflectiveMirrorTransport : Transport
 
         isClient = true;
         isConnected = false;
+        directConnected = false;
 
         // Tell the server we want to join a room
         using (DarkRiftWriter writer = DarkRiftWriter.Create())
         {
             writer.Write(hostID);
+            // If we dont support direct connections, tell it to force use the relay.
+            writer.Write(directConnectModule == null);
+            writer.Write(GetLocalIPAddress());
             using (Message sendJoinMessage = Message.Create((ushort)OpCodes.JoinServer, writer))
                 drClient.Client.SendMessage(sendJoinMessage, SendMode.Reliable);
+        }
+
+        if (directConnectModule != null)
+            StartCoroutine(WaitForConnecting(hostID));
+    }
+
+    IEnumerator WaitForConnecting(ushort host)
+    {
+        float currentTime = 0;
+
+        while(currentTime < directConnectTimeout)
+        {
+            currentTime += Time.deltaTime;
+            if (!string.IsNullOrEmpty(directConnectAddress))
+            {
+                directConnectModule.JoinServer(directConnectAddress);
+                currentTime = 0;
+                break;
+            }
+
+            if (isConnected)
+            {
+                if (showDebugLogs)
+                    Debug.Log("Stopping direct connect attempt. Server doesnt support direct connect and used relay.");
+
+                yield break;
+            }
+
+            yield return new WaitForEndOfFrame();
+        }
+
+        if(currentTime > 0)
+        {
+            // Waiting for info timed out, just use relay and connect.
+            using (DarkRiftWriter writer = DarkRiftWriter.Create())
+            {
+                writer.Write(host);
+                writer.Write(true);
+                writer.Write("0.0.0.0");
+                using (Message sendJoinMessage = Message.Create((ushort)OpCodes.JoinServer, writer))
+                    drClient.Client.SendMessage(sendJoinMessage, SendMode.Reliable);
+            }
+            if (showDebugLogs)
+                Debug.Log("Failed to receive IP from server, falling back to relay.");
+        }
+        else
+        {
+            if (showDebugLogs)
+                Debug.Log($"Received server connection info, attempting direct connection to {directConnectAddress}...");
+
+            while (currentTime < directConnectTimeout)
+            {
+                currentTime += Time.deltaTime;
+
+                if (isConnected)
+                {
+                    if (showDebugLogs)
+                        Debug.Log("Direct connect successful!");
+
+                    yield break;
+                }
+
+                yield return new WaitForEndOfFrame();
+            }
+
+            directConnectModule.ClientDisconnect();
+
+            // Force join the server using relay since direct connect failed.
+            using (DarkRiftWriter writer = DarkRiftWriter.Create())
+            {
+                writer.Write(host);
+                writer.Write(true);
+                writer.Write("0.0.0.0");
+                using (Message sendJoinMessage = Message.Create((ushort)OpCodes.JoinServer, writer))
+                    drClient.Client.SendMessage(sendJoinMessage, SendMode.Reliable);
+            }
+
+            if (showDebugLogs)
+                Debug.Log("Failed to direct connect, falling back to relay.");
         }
     }
 
@@ -268,23 +415,35 @@ public class DarkReflectiveMirrorTransport : Transport
     {
         isClient = false;
 
+        StopAllCoroutines();
+
         using (DarkRiftWriter writer = DarkRiftWriter.Create())
         {
             using (Message sendLeaveMessage = Message.Create((ushort)OpCodes.LeaveRoom, writer))
                 drClient.Client.SendMessage(sendLeaveMessage, SendMode.Reliable);
         }
+
+        if (directConnectModule != null)
+            directConnectModule.ClientDisconnect();
     }
 
     public override bool ClientSend(int channelId, ArraySegment<byte> segment)
     {
         // Only channels are 0 (reliable), 1 (unreliable)
 
-        using (DarkRiftWriter writer = DarkRiftWriter.Create())
+        if (directConnected)
         {
-            writer.Write(segment.Count);
-            writer.Write(segment.Array.Take(segment.Count).ToArray());
-            using (Message sendDataMessage = Message.Create((ushort)OpCodes.SendData, writer))
-                drClient.Client.SendMessage(sendDataMessage, channelId == 0 ? SendMode.Reliable : SendMode.Unreliable);
+            return directConnectModule.ClientSend(segment, channelId);
+        }
+        else
+        {
+            using (DarkRiftWriter writer = DarkRiftWriter.Create())
+            {
+                writer.Write(segment.Count);
+                writer.Write(segment.Array.Take(segment.Count).ToArray());
+                using (Message sendDataMessage = Message.Create((ushort)OpCodes.SendData, writer))
+                    drClient.Client.SendMessage(sendDataMessage, channelId == 0 ? SendMode.Reliable : SendMode.Unreliable);
+            }
         }
 
         return true;
@@ -302,15 +461,23 @@ public class DarkReflectiveMirrorTransport : Transport
 
     public override bool ServerDisconnect(int connectionId)
     {
-        ushort userID;
-        if (connectedClients.TryGetBySecond(connectionId, out userID))
+        ushort relayID;
+        int directID;
+        if (connectedRelayClients.TryGetBySecond(connectionId, out relayID))
         {
             using (DarkRiftWriter writer = DarkRiftWriter.Create())
             {
-                writer.Write(userID);
+                writer.Write(relayID);
                 using (Message sendKickMessage = Message.Create((ushort)OpCodes.KickPlayer, writer))
                     drClient.Client.SendMessage(sendKickMessage, SendMode.Reliable);
             }
+
+            return true;
+        }
+
+        if (connectedDirectClients.TryGetBySecond(connectionId, out directID))
+        {
+            directConnectModule.KickClient(directID);
 
             return true;
         }
@@ -319,17 +486,35 @@ public class DarkReflectiveMirrorTransport : Transport
 
     public override string ServerGetClientAddress(int connectionId)
     {
-        return connectedClients.GetBySecond(connectionId).ToString();
+        int directID = 0;
+
+        if(connectedDirectClients.TryGetBySecond(connectionId, out directID))
+        {
+            return "DIRECT-" + directID;
+        }
+
+        return connectedRelayClients.GetBySecond(connectionId).ToString();
     }
 
     public override bool ServerSend(List<int> connectionIds, int channelId, ArraySegment<byte> segment)
     {
         // TODO: Optimize
         List<ushort> clients = new List<ushort>();
+        List<int> directClients = new List<int>();
+        bool tryDirectConnect = directConnectModule != null;
 
         for (int i = 0; i < connectionIds.Count; i++)
         {
-            clients.Add(connectedClients.GetBySecond(connectionIds[i]));
+            if (tryDirectConnect)
+            {
+                int clientID = 0;
+                if (connectedDirectClients.TryGetBySecond(connectionIds[i], out clientID))
+                {
+                    directClients.Add(clientID);
+                    continue;
+                }
+            }
+            clients.Add(connectedRelayClients.GetBySecond(connectionIds[i]));
             // Including more than 10 client ids per single packet to the relay server could get risky with MTU so less risks if we split it into chunks of 1 packet per 10 players its sending to the server
             if (clients.Count >= 10)
             {
@@ -341,6 +526,11 @@ public class DarkReflectiveMirrorTransport : Transport
         if (clients.Count > 0)
         {
             ServerSendData(clients, segment, channelId);
+        }
+
+        if(directClients.Count > 0)
+        {
+            directConnectModule.ServerSend(directClients, segment, channelId);
         }
 
         return true;
@@ -375,6 +565,8 @@ public class DarkReflectiveMirrorTransport : Transport
         isServer = true;
         isConnected = false;
         currentMemberID = 1;
+        connectedRelayClients = new BiDictionary<ushort, int>();
+        connectedDirectClients = new BiDictionary<int, int>();
 
         // Wait to make sure we are authenticated with the server before actually trying to request creating a room.
         int timeOut = 0;
@@ -400,9 +592,15 @@ public class DarkReflectiveMirrorTransport : Transport
             writer.Write(serverName);
             writer.Write(showOnServerList);
             writer.Write(extraServerData);
+            // If we are forcing relay traffic, or we dont have the direct connect module, tell it to only use relay. If not, tell it we can try direct connections.
+            writer.Write(forceRelayTraffic ? true : directConnectModule == null ? true : false);
+            writer.Write(GetLocalIPAddress());
             using (Message sendStartMessage = Message.Create((ushort)OpCodes.CreateRoom, writer))
                 drClient.Client.SendMessage(sendStartMessage, SendMode.Reliable);
         }
+
+        if (!forceRelayTraffic && directConnectModule != null)
+            directConnectModule.StartServer();
 
         // Wait until server is actually ready or 10 seconds have passed and server failed
         timeOut = 0;
@@ -425,6 +623,9 @@ public class DarkReflectiveMirrorTransport : Transport
     {
         if (isServer)
         {
+            if (directConnectModule != null)
+                directConnectModule.StopServer();
+
             isServer = false;
             using (DarkRiftWriter writer = DarkRiftWriter.Create())
             {
@@ -447,6 +648,54 @@ public class DarkReflectiveMirrorTransport : Transport
         shutdown = true;
         drClient.Disconnect();
     }
+    #endregion
+
+    #region Direct Connect Module
+    public void DirectAddClient(int clientID)
+    {
+        if (!isServer)
+            return;
+
+        connectedDirectClients.Add(clientID, currentMemberID);
+        OnServerConnected?.Invoke(currentMemberID);
+        currentMemberID++;
+    }
+
+    public void DirectRemoveClient(int clientID)
+    {
+        if (!isServer)
+            return;
+
+        OnServerDisconnected?.Invoke(connectedDirectClients.GetByFirst(clientID));
+        connectedDirectClients.Remove(clientID);
+    }
+
+    public void DirectReceiveData(ArraySegment<byte> data, int channel, int clientID = -1)
+    {
+        if (isServer)
+            OnServerDataReceived?.Invoke(connectedDirectClients.GetByFirst(clientID), new ArraySegment<byte>(data.Array, 0, data.Count), channel);
+
+        if (isClient)
+            OnClientDataReceived?.Invoke(data, channel);
+    }
+
+    public void DirectClientConnected()
+    {
+        directConnected = true;
+        isConnected = true;
+        OnClientConnected?.Invoke();
+    }
+
+    public void DirectDisconnected()
+    {
+        if (directConnected)
+        {
+            isConnected = false;
+            isClient = false;
+            OnClientDisconnected?.Invoke();
+        }
+    }
+    #endregion
 }
 
 public struct RelayServerInfo
@@ -458,4 +707,4 @@ public struct RelayServerInfo
     public string serverData;
 }
 
-enum OpCodes { Default = 0, RequestID = 1, JoinServer = 2, SendData = 3, GetID = 4, ServerJoined = 5, GetData = 6, CreateRoom = 7, ServerLeft = 8, PlayerDisconnected = 9, RoomCreated = 10, LeaveRoom = 11, KickPlayer = 12, AuthenticationRequest = 13, AuthenticationResponse = 14, RequestServers = 15, ServerListResponse = 16, Authenticated = 17, UpdateRoomData = 18 }
+enum OpCodes { Default = 0, RequestID = 1, JoinServer = 2, SendData = 3, GetID = 4, ServerJoined = 5, GetData = 6, CreateRoom = 7, ServerLeft = 8, PlayerDisconnected = 9, RoomCreated = 10, LeaveRoom = 11, KickPlayer = 12, AuthenticationRequest = 13, AuthenticationResponse = 14, RequestServers = 15, ServerListResponse = 16, Authenticated = 17, UpdateRoomData = 18, ServerConnectionData = 19 }
