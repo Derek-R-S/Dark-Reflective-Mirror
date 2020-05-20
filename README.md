@@ -65,5 +65,13 @@ If you would like to setup a password on your server you will need to put in the
 
 \*The free version only includes a .NET framework server which from my benchmarks, uses way more performance(More than double!) than the .NET core server. Although you could compile your own .NET core server using the DarkRift.Server.dll from the free version, this requires looking at the functions and understanding how to start a server using it.
 
+## Example
+Maqsoom made an example, feel free to check it out at: https://github.com/maqsoom/DarkReflectiveMirror-Example 
+
+## Credits
+Jamster - Been in contact and has helped sort out some Dark Rift issues. He also made DR2 :P
+
+Maqsoom & JesusLuvsYooh - Both really active testers and have been testing it since I pitched the idea. They've found many issues and prototyped almost every single version!
+
 ## License
 [MIT](https://choosealicense.com/licenses/mit/)
