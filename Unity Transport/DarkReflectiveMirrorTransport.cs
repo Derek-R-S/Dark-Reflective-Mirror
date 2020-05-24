@@ -61,6 +61,9 @@ public class DarkReflectiveMirrorTransport : Transport
 
     void Awake()
     {
+        drClient = GetComponent<UnityClient>();
+        directConnectModule = GetComponent<DarkMirrorDirectConnectModule>();
+        
         if (connectToRelayOnAwake) { ConnectToRelay(); }
     }
     
@@ -70,14 +73,11 @@ public class DarkReflectiveMirrorTransport : Transport
         if (!IPAddress.TryParse(relayIP, out ipAddress)) 
             ipAddress = Dns.GetHostEntry(relayIP).AddressList[0];
 
-        drClient = GetComponent<UnityClient>();
-        directConnectModule = GetComponent<DarkMirrorDirectConnectModule>();
-
-        if (drClient.ConnectionState == ConnectionState.Disconnected)
-            drClient.Connect(IPAddress.Parse(ipAddress.ToString()), relayPort, true);
-
         drClient.Disconnected += Client_Disconnected;
         drClient.MessageReceived += Client_MessageReceived;
+
+        if (drClient.ConnectionState == ConnectionState.Disconnected)
+            drClient.Connect(IPAddress.Parse(ipAddress.ToString()), relayPort, true);   
     }
 
     #region Relay Functions
