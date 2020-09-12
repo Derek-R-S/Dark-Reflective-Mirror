@@ -6,7 +6,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Linq.Expressions;
 using System.Net;
 using System.Net.Sockets;
 using UnityEngine;
@@ -71,6 +70,12 @@ public class DarkReflectiveMirrorTransport : Transport
 
         drClient.Disconnected += Client_Disconnected;
         drClient.MessageReceived += Client_MessageReceived;
+    }
+
+    void OnValidate()
+    {
+        var DRClient = GetComponent<UnityClient>();
+        typeof(UnityClient).GetField("autoConnect", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(DRClient, false);
     }
 
     #region Relay Functions
