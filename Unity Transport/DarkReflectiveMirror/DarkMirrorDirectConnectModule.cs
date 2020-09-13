@@ -24,6 +24,7 @@ public class DarkMirrorDirectConnectModule : MonoBehaviour
         if(directConnectTransport is DarkReflectiveMirrorTransport)
         {
             Debug.Log("Direct Connect Transport Cannot be the relay, silly. :P");
+            return;
         }
 
         directConnectTransport.OnServerConnected.AddListener(OnServerConnected);

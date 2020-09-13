@@ -3,6 +3,12 @@
 ## What
 Dark Reflective Mirror is a transport for Mirror Networking which relays network traffic through your own servers. This allows you to have clients host game servers and not worry about NAT/Port Forwarding, etc. There are still features I plan on adding but it still is completely usable, Some people in the Mirror discord are even using it in their games! Also note, If you see some thins that could use optimizations please tell me! I love to learn and would like to make this as optimized as possible. Thanks.
 
+## Features
+* WebGL Support, WebGL can host servers!
+* Built in server list!
+* Relay password to stop other games from stealing your precious relay!
+* Relay supports connecting users without them needing to port forward!
+* Direct Connect Support, Allows dedicated servers to use the built in server list, but not use any relay bandwidth!
 
 ## Plans
 
@@ -39,6 +45,8 @@ Running a client is fairly straight forward, attach the DarkReflectiveMirrorTran
 
 If your relay server has a password, enter it in the relayPassword field or else you wont be able to connect. By default the relays have no password.
 
+If you want to use websockets, simply toggle 'Use Websockets' under the transports inspector. Make sure the server is running Web Sockets as well!
+
 ##### Direct Connecting
 
 Dark Reflective Mirror supports direct connecting for reduce relay usage. To enable Direct Connecting add the component 'Dark Mirror Direct Connect Module' to your network manager, then add any of the follow transports (Telepathy, LLAPI, Ignorance) and set it as the reference in the Direct Connect Module. And thats all there is to it, your dedicated servers will now use direct connect. Just make sure on the transport that 'Force Relay Traffic' is off or else it will ignore the direct connect module.
@@ -49,7 +57,8 @@ Dark Reflective Mirror has a built in room/server list if you would like to use 
 
 To request the server list you need a reference to the DarkReflectiveMirrorTransport from your script and call 'RequestServerList()'. This will invoke a request to the server to update our server list. Once the response is recieved the field 'relayServerList' will be populated and you can get all the servers from there.
  
-Note: If you would like to test without creating a server, feel free to use my test server with IP: 34.72.21.213 and port 4296, no password. Which is in there by default  :)
+#### Free Relay
+Note: If you would like to test without creating a server, feel free to use my test server with IP: 34.72.21.213 and port 4296 (For a free websockets relay, use port: 4297), no password. Which is in there by default  :)
 
 #### Server Setup
 DarkRift 2 includes a "DarkRift Server (.NET Framework/Core).zip" file in its assets, you will need that for the server. For this demonstration I will be explaining how to host the .NET framework version on a windows machine but running it on a linux machine is fairly straight forward and they have answered it in their discord plenty of times so you should be able to find an answer there. So take the server zip file and extract it to somewhere out of your unity project (Like your desktop in a folder). Download the Server Plugin from the [Releases](https://github.com/Derek-R-S/Dark-Reflective-Mirror/releases) and merge it with your DarkRift server folder. Plugins and Lib folder should merge and put the required files automatically in the right spot. Lastly run DarkRift.Server.Console.exe and it should say Relay Server Started. Then you are good! By default DarkRift server uses port 4296 UDP and TCP so make sure your server has those open. You can change those ports in the Server.config file.
@@ -67,6 +76,20 @@ If you would like to setup a password on your server you will need to put in the
 
 \*The free version only includes a .NET framework server which from my benchmarks, uses way more performance(More than double!) than the .NET core server. Although you could compile your own .NET core server using the DarkRift.Server.dll from the free version, this requires looking at the functions and understanding how to start a server using it.
 
+
+#### Web Socket Server Setup
+To setup the server to use the Web Socket Listener, put everything from the WebSocketListener.zip into the Plugins folder of your server.
+
+Open the Server.config file and modify the listeners section to be:
+
+```
+  <listeners>
+    <listener name="WebSocketListener" type="WebSocketNetworkListener" address="0.0.0.0" port="4296">
+      <settings noDelay="true" />
+    </listener>
+  </listeners>
+```
+
 ## Example
 Maqsoom made an example, feel free to check it out at: https://github.com/maqsoom/DarkReflectiveMirror-Example 
 
@@ -74,6 +97,10 @@ Maqsoom made an example, feel free to check it out at: https://github.com/maqsoo
 Jamster - Been in contact and has helped sort out some Dark Rift issues. He also made DR2 :P
 
 Maqsoom & JesusLuvsYooh - Both really active testers and have been testing it since I pitched the idea. They've found many issues and prototyped almost every single version!
+
+[Fleck](https://github.com/statianzo/Fleck) - Fleck is used for the Web Socket server listener for Dark Rift 2.
+
+[Flejmer](https://github.com/flejmer/) - Had an existing Web Socket listener for Dark Rift 2, That I forked off of and tailored specifically for this relay.
 
 ## License
 [MIT](https://choosealicense.com/licenses/mit/)
