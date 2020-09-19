@@ -15,7 +15,7 @@ using UnityEngine.Events;
 public class DarkReflectiveMirrorTransport : Transport
 {
     #region Relay Server Variables
-    public string relayIP = "34.72.21.213";
+    public string relayIP = "34.67.125.123";
     public ushort relayPort = 4296;
     public bool forceRelayTraffic = false;
     [Tooltip("If your relay server has a password enter it here, or else leave it blank.")]
