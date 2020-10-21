@@ -3,11 +3,8 @@ using DarkRift.Server;
 using System;
 using System.Buffers;
 using System.Collections.Generic;
-using System.Configuration;
-using System.Diagnostics;
 using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using System.Threading;
 
 namespace RelayServerPlugin
 {
@@ -16,10 +13,12 @@ namespace RelayServerPlugin
         public override bool ThreadSafe => true;
         List<Room> rooms = new List<Room>();
         ArrayPool<byte> readBuffers = ArrayPool<byte>.Create(1200, 50);
+        ArrayPool<ushort> sendingBuffers = ArrayPool<ushort>.Create(15, 50);
         List<ushort> pendingConnections = new List<ushort>();
         string authKey = "";
+        Timer timer;
 
-        public override Version Version => new Version("2.0");
+        public override Version Version => new Version("2.31");
 
         public RelayPlugin(PluginLoadData loadData) : base(loadData)
         {
@@ -30,6 +29,13 @@ namespace RelayServerPlugin
             Console.WriteLine("[DarkReflectiveMirror] Relay server started!");
             Console.WriteLine("[DarkReflectiveMirror] Authentication Key set to: " + authKey);
             Console.ForegroundColor = ConsoleColor.White;
+
+            timer = new Timer(TimerCallback, null, 0, 2000);
+        }
+
+        private void TimerCallback(Object o)
+        {
+            GC.Collect();
         }
 
         private void ClientManager_ClientDisconnected(object sender, ClientDisconnectedEventArgs e)
@@ -63,7 +69,7 @@ namespace RelayServerPlugin
                 {
                     OpCodes opCode = (OpCodes)message.Tag;
 
-                    if(opCode != OpCodes.AuthenticationResponse && pendingConnections.Contains(e.Client.ID))
+                    if (opCode != OpCodes.AuthenticationResponse && pendingConnections.Contains(e.Client.ID))
                     {
                         pendingConnections.Remove(e.Client.ID);
                         LeaveRoom(e.Client.ID);
@@ -79,7 +85,7 @@ namespace RelayServerPlugin
                             UpdateRoomData(e, extraData, newMaxPlayers);
                             break;
                         case OpCodes.AuthenticationResponse:
-                            if(reader.ReadString() == authKey)
+                            if (reader.ReadString() == authKey)
                             {
                                 pendingConnections.Remove(e.Client.ID);
                                 using (DarkRiftWriter writer = DarkRiftWriter.Create())
@@ -108,10 +114,9 @@ namespace RelayServerPlugin
                             JoinRoom(e, hostID, useRelay, clientLocalIP);
                             break;
                         case OpCodes.SendData:
-                            int length = reader.ReadInt32();
-                            byte[] readBuffer = readBuffers.Rent(length);
+                            byte[] readBuffer = readBuffers.Rent(reader.ReadInt32());
                             reader.ReadBytesInto(readBuffer, 0);
-                            ProcessData(e, reader, readBuffer, length);
+                            ProcessData(e, reader, readBuffer, readBuffer.Length);
                             break;
                         case OpCodes.LeaveRoom:
                             LeaveRoom(e.Client);
@@ -134,10 +139,13 @@ namespace RelayServerPlugin
 
         void UpdateRoomData(MessageReceivedEventArgs e, string extraData, int maxPlayers)
         {
-            for(int i = 0; i < rooms.Count; i++)
+            for (int i = 0; i < rooms.Count; i++)
             {
-                if(rooms[i].Host.ID == e.Client.ID)
+                if (rooms[i].Host.ID == e.Client.ID)
                 {
+                    rooms[i].ServerData = extraData;
+                    rooms[i].MaxPlayers = maxPlayers;
+                    /* // OLD STRUCT METHOD
                     rooms[i] = new Room()
                     {
                         ServerData = extraData,
@@ -148,7 +156,7 @@ namespace RelayServerPlugin
                         PublicServer = rooms[i].PublicServer,
                         ServerName = rooms[i].ServerName,
                         ServerLocalIP = rooms[i].ServerLocalIP
-                    };
+                    };*/
                     return;
                 }
             }
@@ -182,17 +190,14 @@ namespace RelayServerPlugin
 
         void ProcessData(MessageReceivedEventArgs e, DarkRiftReader reader, byte[] data, int length)
         {
-            Room? room = GetRoomForPlayer(e.Client);
-
-            if (room == null)
-                return;
-
-            Room playersRoom = room.Value;
+            Room playersRoom = GetRoomForPlayer(e.Client);
 
             if (playersRoom.Host == e.Client)
             {
                 // If the host sent this message then read the ids the host wants this data to be sent to and send it to them.
-                var sendingTo = reader.ReadUInt16s().ToList();
+                ushort[] sendBuffer = sendingBuffers.Rent(10);
+                reader.ReadUInt16sInto(sendBuffer, 0);
+
                 using (DarkRiftWriter writer = DarkRiftWriter.Create())
                 {
                     writer.Write(length);
@@ -201,15 +206,19 @@ namespace RelayServerPlugin
                     {
                         for (int i = 0; i < playersRoom.Clients.Count; i++)
                         {
-                            if (sendingTo.Contains(playersRoom.Clients[i].ID))
+                            for (int x = 0; x < sendBuffer.Length; x++)
                             {
-                                sendingTo.Remove(playersRoom.Clients[i].ID);
-
-                                playersRoom.Clients[i].SendMessage(sendDataMessage, e.SendMode);
+                                if (sendBuffer[x] == playersRoom.Clients[i].ID)
+                                {
+                                    playersRoom.Clients[i].SendMessage(sendDataMessage, e.SendMode);
+                                    break;
+                                }
                             }
                         }
                     }
                 }
+
+                sendingBuffers.Return(sendBuffer, true);
             }
             else
             {
@@ -229,9 +238,9 @@ namespace RelayServerPlugin
             readBuffers.Return(data, true);
         }
 
-        Room? GetRoomForPlayer(IClient client)
+        Room GetRoomForPlayer(IClient client)
         {
-            for(int i = 0; i < rooms.Count; i++)
+            for (int i = 0; i < rooms.Count; i++)
             {
                 if (rooms[i].Host == client)
                     return rooms[i];
@@ -246,12 +255,12 @@ namespace RelayServerPlugin
         void JoinRoom(MessageReceivedEventArgs e, ushort hostID, bool useRelay, string localIP)
         {
             LeaveRoom(e.Client);
-            
-            for(int i = 0; i < rooms.Count; i++)
+
+            for (int i = 0; i < rooms.Count; i++)
             {
-                if(rooms[i].Host.ID == hostID)
+                if (rooms[i].Host.ID == hostID)
                 {
-                    if(rooms[i].Clients.Count <= rooms[i].MaxPlayers)
+                    if (rooms[i].Clients.Count <= rooms[i].MaxPlayers)
                     {
                         rooms[i].Clients.Add(e.Client);
 
@@ -398,7 +407,7 @@ namespace RelayServerPlugin
         }
     }
 
-    struct Room
+    class Room
     {
         public IClient Host;
         public string ServerName;

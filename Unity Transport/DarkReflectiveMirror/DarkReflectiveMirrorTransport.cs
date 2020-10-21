@@ -6,7 +6,6 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
-using System.Linq.Expressions;
 using System.Net;
 using System.Net.Sockets;
 using UnityEngine;
@@ -16,7 +15,7 @@ using UnityEngine.Events;
 public class DarkReflectiveMirrorTransport : Transport
 {
     #region Relay Server Variables
-    public string relayIP = "34.72.21.213";
+    public string relayIP = "34.67.125.123";
     public ushort relayPort = 4296;
     public bool forceRelayTraffic = false;
     [Tooltip("If your relay server has a password enter it here, or else leave it blank.")]
@@ -33,6 +32,9 @@ public class DarkReflectiveMirrorTransport : Transport
     public UnityEvent serverListUpdated;
     public List<RelayServerInfo> relayServerList = new List<RelayServerInfo>();
     [HideInInspector] public bool isAuthenticated = false;
+    [Header("WebGL")]
+    public bool useWebsockets = false;
+    WebSocketClientConnection websocketClient;
     #endregion
     #region Script Variables
     public const string Scheme = "darkrelay";
@@ -56,24 +58,46 @@ public class DarkReflectiveMirrorTransport : Transport
     [Tooltip("The amount of time (in secs) it takes before we give up trying to direct connect.")]
     public float directConnectTimeout = 5;
     #endregion
+    
 
     void Awake()
     {
         IPAddress ipAddress;
-        if (!IPAddress.TryParse(relayIP, out ipAddress)) 
+        if (!IPAddress.TryParse(relayIP, out ipAddress))
             ipAddress = Dns.GetHostEntry(relayIP).AddressList[0];
 
         drClient = GetComponent<UnityClient>();
         directConnectModule = GetComponent<DarkMirrorDirectConnectModule>();
 
+
+        websocketClient = new WebSocketClientConnection(relayIP, relayPort);
+
         if (drClient.ConnectionState == ConnectionState.Disconnected)
-            drClient.Connect(IPAddress.Parse(ipAddress.ToString()), relayPort, true);
+        {
+            if (useWebsockets)
+            {
+                if (Application.platform != RuntimePlatform.WebGLPlayer)
+                    drClient.Client.ConnectInBackground(websocketClient);
+                else
+                    drClient.Client.Connect(websocketClient);
+            }
+            else
+            {
+                drClient.Client.Connect(IPAddress.Parse(ipAddress.ToString()), relayPort, true);
+            }
+        }
 
         drClient.Disconnected += Client_Disconnected;
         drClient.MessageReceived += Client_MessageReceived;
     }
 
-    #region Relay Functions
+    void OnValidate()
+    {
+        var DRClient = GetComponent<UnityClient>();
+        typeof(UnityClient).GetField("autoConnect", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic).SetValue(DRClient, false);
+    }
+
+#region Relay Functions
 
     private void Client_MessageReceived(object sender, DarkRift.Client.MessageReceivedEventArgs e)
     {
@@ -175,7 +199,7 @@ public class DarkReflectiveMirrorTransport : Transport
                     case OpCodes.ServerListResponse:
                         int serverListCount = reader.ReadInt32();
                         relayServerList.Clear();
-                        for(int i = 0; i < serverListCount; i++)
+                        for (int i = 0; i < serverListCount; i++)
                         {
                             relayServerList.Add(new RelayServerInfo()
                             {
@@ -194,21 +218,26 @@ public class DarkReflectiveMirrorTransport : Transport
                 }
             }
         }
-        catch {
+        catch
+        {
             // Server shouldnt send messed up data but we do have an unreliable channel, so eh.
         }
     }
 
     public static string GetLocalIPAddress()
     {
-        var host = Dns.GetHostEntry(Dns.GetHostName());
-        foreach (var ip in host.AddressList)
+        if (Application.platform != RuntimePlatform.WebGLPlayer)
         {
-            if (ip.AddressFamily == AddressFamily.InterNetwork)
+            var host = Dns.GetHostEntry(Dns.GetHostName());
+            foreach (var ip in host.AddressList)
             {
-                return ip.ToString();
+                if (ip.AddressFamily == AddressFamily.InterNetwork)
+                {
+                    return ip.ToString();
+                }
             }
         }
+
         return "0.0.0.0";
     }
 
@@ -237,7 +266,7 @@ public class DarkReflectiveMirrorTransport : Transport
     {
         int tries = 0;
         // Wait up to a maximum of 10 seconds before giving up.
-        while(tries < 40)
+        while (tries < 40)
         {
             if (isAuthenticated)
             {
@@ -263,8 +292,8 @@ public class DarkReflectiveMirrorTransport : Transport
         }
     }
 
-    #endregion
-    #region Mirror Functions
+#endregion
+#region Mirror Functions
 
     public override bool Available()
     {
@@ -281,7 +310,7 @@ public class DarkReflectiveMirrorTransport : Transport
             return;
         }
 
-        if(isClient || isServer)
+        if (isClient || isServer)
         {
             Debug.Log("Cannot connect while hosting/already connected.");
             return;
@@ -296,7 +325,8 @@ public class DarkReflectiveMirrorTransport : Transport
             if (isAuthenticated || timeOut >= 100)
                 break;
 
-            System.Threading.Thread.Sleep(100);
+            if (Application.platform != RuntimePlatform.WebGLPlayer)
+                System.Threading.Thread.Sleep(100);
         }
 
         if (timeOut >= 100 && !isAuthenticated)
@@ -329,7 +359,7 @@ public class DarkReflectiveMirrorTransport : Transport
     {
         float currentTime = 0;
 
-        while(currentTime < directConnectTimeout)
+        while (currentTime < directConnectTimeout)
         {
             currentTime += Time.deltaTime;
             if (!string.IsNullOrEmpty(directConnectAddress))
@@ -350,7 +380,7 @@ public class DarkReflectiveMirrorTransport : Transport
             yield return new WaitForEndOfFrame();
         }
 
-        if(currentTime > 0)
+        if (currentTime > 0)
         {
             // Waiting for info timed out, just use relay and connect.
             using (DarkRiftWriter writer = DarkRiftWriter.Create())
@@ -488,7 +518,7 @@ public class DarkReflectiveMirrorTransport : Transport
     {
         int directID = 0;
 
-        if(connectedDirectClients.TryGetBySecond(connectionId, out directID))
+        if (connectedDirectClients.TryGetBySecond(connectionId, out directID))
         {
             return "DIRECT-" + directID;
         }
@@ -528,7 +558,7 @@ public class DarkReflectiveMirrorTransport : Transport
             ServerSendData(clients, segment, channelId);
         }
 
-        if(directClients.Count > 0)
+        if (directClients.Count > 0)
         {
             directConnectModule.ServerSend(directClients, segment, channelId);
         }
@@ -577,10 +607,11 @@ public class DarkReflectiveMirrorTransport : Transport
             if (isAuthenticated || timeOut >= 100)
                 break;
 
-            System.Threading.Thread.Sleep(100);
+            if (Application.platform != RuntimePlatform.WebGLPlayer)
+                System.Threading.Thread.Sleep(100);
         }
 
-        if(timeOut >= 100)
+        if (timeOut >= 100)
         {
             Debug.Log("Failed to authenticate in time with backend! Make sure your secret key and IP/port are correct.");
             return;
@@ -610,10 +641,13 @@ public class DarkReflectiveMirrorTransport : Transport
             drClient.Dispatcher.ExecuteDispatcherTasks();
             if (isConnected || timeOut >= 100)
                 break;
-            System.Threading.Thread.Sleep(100);
+
+            if (!useWebsockets)
+                System.Threading.Thread.Sleep(100);
         }
 
-        if(timeOut >= 100)
+        // Webgl cant actually do a thread.sleep so the timeout is kinda invalid. Oh well :P
+        if (timeOut >= 100 && !useWebsockets)
         {
             Debug.LogError("Failed to create the server on the relay. Are you connected? Double check the secret key and IP/port.");
         }
@@ -648,9 +682,9 @@ public class DarkReflectiveMirrorTransport : Transport
         shutdown = true;
         drClient.Disconnect();
     }
-    #endregion
+#endregion
 
-    #region Direct Connect Module
+#region Direct Connect Module
     public void DirectAddClient(int clientID)
     {
         if (!isServer)
@@ -695,7 +729,7 @@ public class DarkReflectiveMirrorTransport : Transport
             OnClientDisconnected?.Invoke();
         }
     }
-    #endregion
+#endregion
 }
 
 public struct RelayServerInfo
