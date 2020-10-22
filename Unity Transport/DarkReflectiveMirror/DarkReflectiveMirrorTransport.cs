@@ -57,10 +57,17 @@ public class DarkReflectiveMirrorTransport : Transport
     private DarkMirrorDirectConnectModule directConnectModule;
     [Tooltip("The amount of time (in secs) it takes before we give up trying to direct connect.")]
     public float directConnectTimeout = 5;
+    [Tooltip("If your scene does not need to connect on awake, set this to false, then use 'ConnectToRelay();' when needed.")]
+    public bool connectToRelayOnAwake = true;
     #endregion
     
 
     void Awake()
+    {
+        if (connectToRelayOnAwake) { ConnectToRelay(); }
+    }
+    
+    public void ConnectToRelay()
     {
         IPAddress ipAddress;
         if (!IPAddress.TryParse(relayIP, out ipAddress))
@@ -69,13 +76,12 @@ public class DarkReflectiveMirrorTransport : Transport
         drClient = GetComponent<UnityClient>();
         directConnectModule = GetComponent<DarkMirrorDirectConnectModule>();
 
-
-        websocketClient = new WebSocketClientConnection(relayIP, relayPort);
-
         if (drClient.ConnectionState == ConnectionState.Disconnected)
         {
             if (useWebsockets)
             {
+                websocketClient = new WebSocketClientConnection(relayIP, relayPort);
+                
                 if (Application.platform != RuntimePlatform.WebGLPlayer)
                     drClient.Client.ConnectInBackground(websocketClient);
                 else
