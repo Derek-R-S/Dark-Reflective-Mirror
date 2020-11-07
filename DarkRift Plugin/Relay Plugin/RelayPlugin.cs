@@ -13,12 +13,11 @@ namespace RelayServerPlugin
         public override bool ThreadSafe => true;
         List<Room> rooms = new List<Room>();
         ArrayPool<byte> readBuffers = ArrayPool<byte>.Create(1200, 50);
-        ArrayPool<ushort> sendingBuffers = ArrayPool<ushort>.Create(15, 50);
         List<ushort> pendingConnections = new List<ushort>();
         string authKey = "";
-        Timer timer;
+        System.Threading.Timer timer;
 
-        public override Version Version => new Version("2.31");
+        public override Version Version => new Version("2.5");
 
         public RelayPlugin(PluginLoadData loadData) : base(loadData)
         {
@@ -30,7 +29,7 @@ namespace RelayServerPlugin
             Console.WriteLine("[DarkReflectiveMirror] Authentication Key set to: " + authKey);
             Console.ForegroundColor = ConsoleColor.White;
 
-            timer = new Timer(TimerCallback, null, 0, 2000);
+            timer = new System.Threading.Timer(TimerCallback, null, 0, 2000);
         }
 
         private void TimerCallback(Object o)
@@ -195,8 +194,7 @@ namespace RelayServerPlugin
             if (playersRoom.Host == e.Client)
             {
                 // If the host sent this message then read the ids the host wants this data to be sent to and send it to them.
-                ushort[] sendBuffer = sendingBuffers.Rent(10);
-                reader.ReadUInt16sInto(sendBuffer, 0);
+                ushort connId = reader.ReadUInt16();
 
                 using (DarkRiftWriter writer = DarkRiftWriter.Create())
                 {
@@ -206,19 +204,14 @@ namespace RelayServerPlugin
                     {
                         for (int i = 0; i < playersRoom.Clients.Count; i++)
                         {
-                            for (int x = 0; x < sendBuffer.Length; x++)
+                            if(playersRoom.Clients[i].ID == connId)
                             {
-                                if (sendBuffer[x] == playersRoom.Clients[i].ID)
-                                {
-                                    playersRoom.Clients[i].SendMessage(sendDataMessage, e.SendMode);
-                                    break;
-                                }
+                                playersRoom.Clients[i].SendMessage(sendDataMessage, e.SendMode);
+                                break;
                             }
                         }
                     }
                 }
-
-                sendingBuffers.Return(sendBuffer, true);
             }
             else
             {

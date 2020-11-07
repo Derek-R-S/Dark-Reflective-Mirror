@@ -81,14 +81,14 @@ public class DarkMirrorDirectConnectModule : MonoBehaviour
         directConnectTransport.ClientDisconnect();
     }
 
-    public void ServerSend(List<int> clientIDs, ArraySegment<byte> data, int channel)
+    public void ServerSend(int clientID, ArraySegment<byte> data, int channel)
     {
-        directConnectTransport.ServerSend(clientIDs, channel, data);
+        directConnectTransport.ServerSend(clientID, channel, data);
     }
 
-    public bool ClientSend(ArraySegment<byte> data, int channel)
+    public void ClientSend(ArraySegment<byte> data, int channel)
     {
-        return directConnectTransport.ClientSend(channel, data);
+        directConnectTransport.ClientSend(channel, data);
     }
 
     #region Transport Callbacks

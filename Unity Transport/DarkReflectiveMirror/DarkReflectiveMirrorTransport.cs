@@ -15,6 +15,8 @@ using UnityEngine.Events;
 public class DarkReflectiveMirrorTransport : Transport
 {
     #region Relay Server Variables
+    [Tooltip("If your scene does not need to connect on awake, set this to false, then use 'ConnectToRelay();' when needed.")]
+    public bool connectToRelayOnAwake = true;
     public string relayIP = "34.67.125.123";
     public ushort relayPort = 4296;
     public bool forceRelayTraffic = false;
@@ -57,16 +59,15 @@ public class DarkReflectiveMirrorTransport : Transport
     private DarkMirrorDirectConnectModule directConnectModule;
     [Tooltip("The amount of time (in secs) it takes before we give up trying to direct connect.")]
     public float directConnectTimeout = 5;
-    [Tooltip("If your scene does not need to connect on awake, set this to false, then use 'ConnectToRelay();' when needed.")]
-    public bool connectToRelayOnAwake = true;
     #endregion
     
 
     void Awake()
     {
-        if (connectToRelayOnAwake) { ConnectToRelay(); }
+        if(connectToRelayOnAwake)
+            ConnectToRelay();
     }
-    
+
     public void ConnectToRelay()
     {
         IPAddress ipAddress;
@@ -80,8 +81,9 @@ public class DarkReflectiveMirrorTransport : Transport
         {
             if (useWebsockets)
             {
+
                 websocketClient = new WebSocketClientConnection(relayIP, relayPort);
-                
+
                 if (Application.platform != RuntimePlatform.WebGLPlayer)
                     drClient.Client.ConnectInBackground(websocketClient);
                 else
@@ -463,13 +465,13 @@ public class DarkReflectiveMirrorTransport : Transport
             directConnectModule.ClientDisconnect();
     }
 
-    public override bool ClientSend(int channelId, ArraySegment<byte> segment)
+    public override void ClientSend(int channelId, ArraySegment<byte> segment)
     {
         // Only channels are 0 (reliable), 1 (unreliable)
 
         if (directConnected)
         {
-            return directConnectModule.ClientSend(segment, channelId);
+            directConnectModule.ClientSend(segment, channelId);
         }
         else
         {
@@ -481,8 +483,6 @@ public class DarkReflectiveMirrorTransport : Transport
                     drClient.Client.SendMessage(sendDataMessage, channelId == 0 ? SendMode.Reliable : SendMode.Unreliable);
             }
         }
-
-        return true;
     }
 
     public override int GetMaxPacketSize(int channelId = 0)
@@ -532,53 +532,31 @@ public class DarkReflectiveMirrorTransport : Transport
         return connectedRelayClients.GetBySecond(connectionId).ToString();
     }
 
-    public override bool ServerSend(List<int> connectionIds, int channelId, ArraySegment<byte> segment)
+    public override void ServerSend(int connectionId, int channelId, ArraySegment<byte> segment)
     {
         // TODO: Optimize
-        List<ushort> clients = new List<ushort>();
-        List<int> directClients = new List<int>();
         bool tryDirectConnect = directConnectModule != null;
 
-        for (int i = 0; i < connectionIds.Count; i++)
+        if (tryDirectConnect)
         {
-            if (tryDirectConnect)
+            int clientID;
+            if (connectedDirectClients.TryGetBySecond(connectionId, out clientID))
             {
-                int clientID = 0;
-                if (connectedDirectClients.TryGetBySecond(connectionIds[i], out clientID))
-                {
-                    directClients.Add(clientID);
-                    continue;
-                }
-            }
-            clients.Add(connectedRelayClients.GetBySecond(connectionIds[i]));
-            // Including more than 10 client ids per single packet to the relay server could get risky with MTU so less risks if we split it into chunks of 1 packet per 10 players its sending to the server
-            if (clients.Count >= 10)
-            {
-                ServerSendData(clients, segment, channelId);
-                clients.Clear();
+                directConnectModule.ServerSend(clientID, segment, channelId);
+                return;
             }
         }
 
-        if (clients.Count > 0)
-        {
-            ServerSendData(clients, segment, channelId);
-        }
-
-        if (directClients.Count > 0)
-        {
-            directConnectModule.ServerSend(directClients, segment, channelId);
-        }
-
-        return true;
+        ServerSendData(connectedRelayClients.GetBySecond(connectionId), segment, channelId);
     }
 
-    void ServerSendData(List<ushort> clients, ArraySegment<byte> data, int channelId)
+    void ServerSendData(ushort client, ArraySegment<byte> data, int channelId)
     {
         using (DarkRiftWriter writer = DarkRiftWriter.Create())
         {
             writer.Write(data.Count);
             writer.Write(data.Array.Take(data.Count).ToArray());
-            writer.Write(clients.ToArray());
+            writer.Write(client);
             using (Message sendDataMessage = Message.Create((ushort)OpCodes.SendData, writer))
                 drClient.Client.SendMessage(sendDataMessage, channelId == 0 ? SendMode.Reliable : SendMode.Unreliable);
         }
@@ -686,7 +664,8 @@ public class DarkReflectiveMirrorTransport : Transport
     public override void Shutdown()
     {
         shutdown = true;
-        drClient.Disconnect();
+        if(drClient.ConnectionState == ConnectionState.Connected)
+            drClient.Disconnect();
     }
 #endregion
 

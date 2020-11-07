@@ -93,6 +93,20 @@ Open the Server.config file and modify the listeners section to be:
 ## Example
 Maqsoom made an example, feel free to check it out at: https://github.com/maqsoom/DarkReflectiveMirror-Example 
 
+## Common Errors
+
+`Could not load file or assembly 'Path To relay plugin' or one of its dependencies. Operation is not supported.`
+This error occurs on some window servers versions. To fix, right click on the RelayServerPlugin.dll, go to properties and click Unblock. Do the same for System.Buffers.dll.
+
+`Ansi Coloring`
+If you get an error about Ansi Coloring, open the config file and change
+`<logWriter name="ConsoleWriter1" type="ConsoleWriter" levels="info, warning, error, fatal"/>
+`
+to
+`<logWriter name="ConsoleWriter1" type="ConsoleWriter" levels="info, warning, error, fatal" >
+      <settings useFastAnsiColoring="false" />
+      </logWriter>`
+
 ## Credits
 Jamster - Been in contact and has helped sort out some Dark Rift issues. He also made DR2 :P
 
