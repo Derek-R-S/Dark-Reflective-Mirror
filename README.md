@@ -100,6 +100,8 @@ Maqsoom made an example, feel free to check it out at: https://github.com/maqsoo
 This error occurs on some window servers versions. To fix, right click on the RelayServerPlugin.dll, go to properties and click Unblock. Do the same for System.Buffers.dll.
 
 
+
+
 `Ansi Coloring`
 If you get an error about Ansi Coloring, open the config file and change
 `<logWriter name="ConsoleWriter1" type="ConsoleWriter" levels="info, warning, error, fatal"/>
