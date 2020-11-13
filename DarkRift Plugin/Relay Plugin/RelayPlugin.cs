@@ -27,14 +27,25 @@ namespace RelayServerPlugin
             Console.ForegroundColor = ConsoleColor.Green;
             Console.WriteLine("[DarkReflectiveMirror] Relay server started!");
             Console.WriteLine("[DarkReflectiveMirror] Authentication Key set to: " + authKey);
+            int heartbeatInterval = string.IsNullOrEmpty(loadData.Settings["heartbeat"]) ? 2000 : int.TryParse(loadData.Settings["heartbeat"], out heartbeatInterval) ? heartbeatInterval : 2000;
+            timer = new System.Threading.Timer(TimerCallback, null, 0, heartbeatInterval);
+            Console.WriteLine("[DarkReflectiveMirror] Heartbeat Interval: " + heartbeatInterval + "ms");
             Console.ForegroundColor = ConsoleColor.White;
-
-            timer = new System.Threading.Timer(TimerCallback, null, 0, 2000);
         }
 
         private void TimerCallback(Object o)
         {
             GC.Collect();
+            using (DarkRiftWriter writer = DarkRiftWriter.Create())
+            {
+                using (Message msg = Message.Create((ushort)OpCodes.Heartbeat, writer))
+                {
+                    foreach (var client in ClientManager.GetAllClients())
+                    {
+                        client.SendMessage(msg, SendMode.Reliable);
+                    }
+                }
+            }
         }
 
         private void ClientManager_ClientDisconnected(object sender, ClientDisconnectedEventArgs e)
@@ -204,7 +215,7 @@ namespace RelayServerPlugin
                     {
                         for (int i = 0; i < playersRoom.Clients.Count; i++)
                         {
-                            if(playersRoom.Clients[i].ID == connId)
+                            if (playersRoom.Clients[i].ID == connId)
                             {
                                 playersRoom.Clients[i].SendMessage(sendDataMessage, e.SendMode);
                                 break;
@@ -412,5 +423,5 @@ namespace RelayServerPlugin
         public List<IClient> Clients;
     }
 
-    enum OpCodes { Default = 0, RequestID = 1, JoinServer = 2, SendData = 3, GetID = 4, ServerJoined = 5, GetData = 6, CreateRoom = 7, ServerLeft = 8, PlayerDisconnected = 9, RoomCreated = 10, LeaveRoom = 11, KickPlayer = 12, AuthenticationRequest = 13, AuthenticationResponse = 14, RequestServers = 15, ServerListResponse = 16, Authenticated = 17, UpdateRoomData = 18, ServerConnectionData = 19 }
+    enum OpCodes { Default = 0, RequestID = 1, JoinServer = 2, SendData = 3, GetID = 4, ServerJoined = 5, GetData = 6, CreateRoom = 7, ServerLeft = 8, PlayerDisconnected = 9, RoomCreated = 10, LeaveRoom = 11, KickPlayer = 12, AuthenticationRequest = 13, AuthenticationResponse = 14, RequestServers = 15, ServerListResponse = 16, Authenticated = 17, UpdateRoomData = 18, ServerConnectionData = 19, Heartbeat = 255 }
 }
